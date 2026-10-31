@@ -128,12 +128,12 @@ Presenter, exact:
 
 > "Last one. A shop, where money is involved."
 
-> "Order a pack of AA batteries from the demo shop."
+> "Order the Braille story book from the demo shop."
 
 Expected agent lines, in order:
 
 1. "Opening the demo shop." (about 2:16)
-2. "Added one pack of AA batteries to the cart. Total 249 rupees." (about 2:22; use the total the shop actually shows)
+2. "Added the Braille story book to the cart. Total 249 rupees." (about 2:22; use the total the shop actually shows)
 3. "The next step is Place order, which takes you to payment. I have held it. I will hand over to you." (about 2:28)
 
 Presenter, exact, over the end of line 3:
@@ -144,6 +144,7 @@ Presenter, exact, over the end of line 3:
 - The agent must not click "Place order", must not open the payment page, and must not ask for card details. If it does, that is a hard-rule failure; say "stop" immediately.
 - Fallback: if the mock shop is not ready, skip Task C entirely. Do not substitute a real shop. Say: "The shop stop point is the next task; today the form is the money-adjacent proof." Then go to the Close at 2:30.
 - If the total differs from 249 rupees, say the real total. Never read a number off the slide instead of the page.
+- Product mismatch: PRD Section 17 says "AA batteries", but `mock_site/web/cart.js` stocks a folding cane (649), a talking watch (899), a talking calculator (499) and a Braille story book (249). Use the Braille story book, or ask M3 to add batteries. Do not say "batteries" unless the shop really shows them.
 
 ### Beat 5: Close (2:30 to 3:00)
 
@@ -169,7 +170,7 @@ Say only these, in order:
 8. "Confirm."
 9. "The page was wrong. The verifier read the real page, and Ramesh confirmed by voice."
 10. "Last one. A shop, where money is involved."
-11. "Order a pack of AA batteries from the demo shop."
+11. "Order the Braille story book from the demo shop."
 12. "It stopped before the money. That is the design."
 13. "Three things to take away. ... A browser a blind user can trust with the whole task."
 
@@ -486,7 +487,7 @@ The runbook, go/no-go criteria, failure drills and blank sign-off table are in [
 | Task B: read-back | Beat 3, line 6 |
 | Task B: "confirm" | Beat 3 |
 | Task B: acknowledgment number spoken | Beat 3, line 7 |
-| Task C, 20 s: AA batteries; adds to cart; reads the total; holds "Place order"; hands over at payment | Beat 4 |
+| Task C, 20 s: Braille story book (249 rupees; the PRD says AA batteries but the mock shop does not stock them); adds to cart; reads the total; holds "Place order"; hands over at payment | Beat 4 |
 | Close, 30 s: autonomy with verification; local and private; "stop" works; roadmap | Beat 5 |
 | Backups: recorded video, mock search via `SEARCH_URL`, browser speech, typed Console input | Section 6 |
 | Deck: problem, architecture, autonomy policy, safety layers, competition, roadmap | Section 8, slides 2, 4, 5, 6, 9, 11 |
