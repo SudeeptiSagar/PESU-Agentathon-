@@ -62,7 +62,7 @@ Checkpoints: CP1 19:30, CP2 20:30, CP3 23:00, CP4 01:00, CP5 04:00, freeze 11:00
 
 - Speech recognition: **Handy**, via the Voice Console page that catches its paste. Fallback after the 20:30 gate fails: faster-whisper + silero-vad behind the same `STT` interface.
 - Speech output: **Piper**; fallback is browser `speechSynthesis` through the Console.
-- LLM: **Ollama** (`qwen2.5:7b` default), behind one `llm()` function so an API can be swapped in.
+- LLM: **Ollama** (`qwen3:8b` default), behind one `llm()` function so an API can be swapped in.
 - Browser: **our own Playwright tool layer**, not browser-use, so the safety checks sit in the action path.
 - Safety: placeholders for profile values; irreversible controls held as `pending_action` and committed only after "confirm"; domain policy in code; CAPTCHA, OTP, passwords and payment always handed to the user; "stop" always works.
 - Jev: deterministic rules first, Jev semantic check second; switchable backend.

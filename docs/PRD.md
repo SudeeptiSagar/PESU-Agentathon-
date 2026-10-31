@@ -167,7 +167,7 @@ pesu-agentathon/
 |---|---|
 | Backend (FastAPI) | `http://localhost:8080`, Console at `/console`, WebSocket at `/ws/console`, health at `/health` |
 | Mock sites | `http://localhost:8000` (`python -m http.server 8000` inside `mock_site/`): `/portal/` and `/web/` |
-| Ollama | `OLLAMA_URL` (default `http://localhost:11434/v1`), `LLM_MODEL` (default `qwen2.5:7b`), `NUM_CTX=8192` |
+| Ollama | `OLLAMA_URL` (default `http://localhost:11434/v1`), `LLM_MODEL` (default `qwen3:8b`), `NUM_CTX=8192` |
 | Search | `SEARCH_URL` (default `https://html.duckduckgo.com/html/?q={q}`); `SEARCH_URL=http://localhost:8000/web/search.html?q={q}` for the offline demo |
 | Autonomy | `MAX_STEPS=30`, `MAX_FAILURES=2`, `BLOCKED_DOMAINS` (comma list) |
 | Voice | `STT_BACKEND=handy` or `whisper`; `TTS_BACKEND=piper` or `browser`; `PIPER_VOICE=<path to .onnx>` |
