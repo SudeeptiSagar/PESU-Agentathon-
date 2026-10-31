@@ -317,3 +317,26 @@ input {
     color: CanvasText;
   }
 }
+
+/* Shown instead of the WebGL orb when the browser cannot draw it. Same size and state colour. */
+.plain-orb {
+  position: relative;
+  z-index: 1;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff55, var(--plain-orb) 55%, #0000 100%);
+  box-shadow: 0 0 60px 8px var(--plain-orb);
+  opacity: 0.9;
+  animation: plain-orb-pulse 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes plain-orb-pulse {
+  0%, 100% { transform: scale(0.96); }
+  50% { transform: scale(1.03); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plain-orb { animation: none; }
+}
