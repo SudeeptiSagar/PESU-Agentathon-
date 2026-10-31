@@ -58,6 +58,46 @@ Checked in the signed-in agent profile with the agent's own functions (`goto`, `
 Result: open inbox (15 row links in the snapshot, newest first), click the newest row, `main_text`
 starts with the subject, has the sender and the full body, and no Gmail UI words.
 
+## BRW-06: perception on real sites (31 Oct 2026, 23:45 IST)
+
+Script: `scripts/real_site_check.py` (headless and headed Playwright Chromium, public pages, nothing
+signed in). Tests: `tests/test_real_sites.py` (`RUN_NETWORK_TESTS=1`). Windows 11, Playwright 1.64.1.
+
+| Site | Headless | Headed | snapshot | main_text |
+|---|---|---|---|---|
+| Wikipedia, "Kalpana Chawla" | 200 | 200 | 3.6 KB, 0.2 s, 60 elements (cap) | starts with the title, infobox then article; no menus. Only "Donate" is held as irreversible |
+| The Hindu, home page | 200 | 200 | 4.8 KB, under 0.2 s | the lead headline first, then the other headlines (good for "read me today's top headline") |
+| The Hindu, top article | 200 | 200 | 3.5 KB, under 0.3 s | starts with the headline, then the article (1.4 to 2 KB); no "Subscribe" or sign-in text |
+| socialjustice.gov.in (gov.in) | 200 | 200 | 5.2 KB, 0.1 s; notices are links | only 221 characters: the page has no main or article section, and 92% of its text is drop-down menus and a notices sidebar |
+| DuckDuckGo HTML results (`SEARCH_URL`) | **403, blocked** (also with a desktop user agent) | 200, 10 results | 4.7 KB | starts with the first result |
+| Bing results | 200, 10 results | 200, 10 results | 3.8 to 5.1 KB | the results; headed starts with Bing's answer ("Kalpana Chawla Place of birth: Karnal") |
+| www.india.gov.in, www.pmindia.gov.in | 403 "Access Denied" | not checked | none | none |
+
+`humancheck` was silent on every page above.
+
+Fixes made in `perception.py` while testing:
+- Link text promotes a link to an irreversible button only when it is a short command (4 words
+  or fewer, e.g. "Buy now", "Delete"). gov.in notices such as "CORRIGENDUM ... for the post of
+  Consultant", "Post Matric Scholarship" and "Pay Commission" were wrongly held. Address hints
+  (`/mail/delete`) still promote any link.
+- `main_text` reads the whole page when the main landmark holds only a sliver of it. On Bing
+  headless `<main>` held only the toolbar while the results sat outside it.
+- Search results arrive after "load": on DuckDuckGo and Bing, `snapshot` and `main_text` wait up to
+  5 s for the results list (Gmail 10 s). A page that never becomes ready, such as DuckDuckGo's 403
+  page, is waited for only once.
+
+Fallbacks:
+- **Search:** the agent runs headed, where the default DuckDuckGo `SEARCH_URL` works. If it is
+  blocked on the demo network, set `SEARCH_URL=https://www.bing.com/search?q={q}`, which works
+  headed and headless, or `http://localhost:8000/web/search.html?q={q}` for the offline demo.
+  Headless tests must not depend on DuckDuckGo.
+- **Blocked sites (india.gov.in):** use socialjustice.gov.in or mygov.in (in `sites.json`). Never
+  work around a block by hiding the automation or faking the user agent.
+- **Portal home pages with little text (gov.in):** answer from the snapshot's links and headings
+  (notices and schemes are links), then open the relevant link and read its `main_text`.
+- **Pages that start their own navigation (The Hindu):** a `goto` can fail with `ERR_ABORTED`;
+  retrying once works.
+
 ## Search and site reachability (BRW-05, 31 Oct 2026, 21:55 IST)
 
 Checked from this network with Playwright's Chromium.
