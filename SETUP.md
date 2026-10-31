@@ -4,16 +4,26 @@ Complete these steps on every machine that will run the voice demo. Handy transc
 
 ## Install Handy
 
-- Install the latest release from the [Handy releases page](https://github.com/cjpais/Handy/releases). On Windows, the project also documents `winget install cjpais.Handy`; on macOS, `brew install --cask handy` is available. These package-manager entries are maintained by third parties.
-- On Debian or Ubuntu, install the downloaded `.deb` with `sudo apt install ./Handy_*.deb` so required dependencies are installed.
-- Launch Handy. Allow microphone and accessibility permissions when the operating system asks. If a permission was denied earlier, re-enable it in the operating system's privacy settings and restart Handy. On Windows 11, microphone permissions are under **Settings → Privacy & security → Microphone**; enable microphone access, app access, and desktop-app access. On macOS, enable Handy under **System Settings → Privacy & Security → Microphone** and **Accessibility** when requested.
-- Connect the wired headset before the test. Use its microphone (or the computer's built-in microphone) and headphones for playback. Handy's current README warns that Bluetooth headset microphones can reduce playback quality on macOS.
+- On Windows, install from PowerShell with:
 
-## Download and select a model
+  ```powershell
+  winget install --id cjpais.Handy --scope user --skip-dependencies --accept-package-agreements --accept-source-agreements
+  ```
 
-1. Open Handy's **Settings → Models**.
-2. Download a speech model that supports the languages used in the demo. Wait for its status to show **Downloaded**, then select it and try a short transcription. Model downloads are large, so finish this on each machine before demo day.
-3. If Handy cannot download a model because of network restrictions, follow the [official manual model installation steps](https://github.com/cjpais/Handy#manual-model-installation-for-proxy-users-or-network-restrictions). Keep the model's original filename, restart Handy, and confirm it appears as **Downloaded** under **Settings → Models**.
+  Use `--skip-dependencies` because the standard winget command failed on a VulkanRT dependency-manifest resolution error. This skips winget's problematic dependency step while installing Handy itself.
+- Verify that winget lists the installed package, then open **Handy** from the Windows Start menu. Confirm its window opens and its tray icon is available. If the window does not appear, check Task Manager for `handy.exe` and relaunch Handy from Start.
+- On macOS, `brew install --cask handy` is available. On Debian or Ubuntu, install the downloaded `.deb` with `sudo apt install ./Handy_*.deb` so required dependencies are installed.
+- Handy's project notes that its winget and Homebrew packages are maintained by third parties. The official release page is also available at [Handy releases](https://github.com/cjpais/Handy/releases).
+
+## First launch, permissions, and model
+
+1. Start Handy and complete its first-run GUI setup. Allow microphone access when Windows prompts. On macOS, allow microphone access and Accessibility when requested. If onboarding offers a model, choose one that supports the demo language and start its download.
+2. If Windows does not show a permission prompt, open **Settings → Privacy & security → Microphone** and enable **Microphone access**, **Let apps access your microphone**, and **Let desktop apps access your microphone**. Restart Handy after changing a denied permission.
+3. Open Handy **Settings → Models** if onboarding did not offer model selection. Download a speech model, wait until it shows **Downloaded**, select it, and test a short harmless phrase. Model files can be large; finish downloading before the demo.
+4. If the model cannot download because of network restrictions, follow the [official manual model installation steps](https://github.com/cjpais/Handy#manual-model-installation-for-proxy-users-or-network-restrictions). Keep the model's original filename and restart Handy so it can detect the file.
+5. Confirm a transcription appears in Handy. This checks its local model; still test paste into the Voice Console with the procedure below.
+
+The Handy first-run screen and model list can vary by release. The official README's quick-start covers permissions and shortcuts, and its model section describes selecting and testing downloaded models: [Handy README](https://github.com/cjpais/Handy/blob/main/README.md).
 
 ## Set the in-app hold-to-talk shortcut
 
@@ -32,11 +42,15 @@ The project has a separate OS shortcut for starting the application (CORE-14). H
 
 ## Per-machine check before the demo
 
-- [ ] Handy launches and microphone permission is enabled.
-- [ ] A model is downloaded, selected, and transcribes a short phrase.
-- [ ] Hold-to-talk starts and stops recording, and text lands in the Voice Console.
-- [ ] Repeat five harmless paste attempts; each lands in the focused Console, with no stale clipboard text.
-- [ ] Wired headset microphone and headphone output both work.
+- [ ] `winget list --id cjpais.Handy` lists Handy, and the Start-menu app opens with its tray icon.
+- [ ] Windows microphone access, app access, and desktop-app access are enabled.
+- [ ] First-run setup is complete; a model is downloaded, selected, and transcribes a short phrase.
+- [ ] Hold-to-talk starts recording while held and stops on release; the transcript appears in Handy.
+- [ ] With the Voice Console input focused, repeat five harmless hold-to-talk attempts; each transcript is visible before it sends and lands in the Console without stale clipboard text.
+- [ ] Repeat the 10-utterance focus gate in `docs/M2_RUN_GUIDE.md` when validating the Handy/Console handoff.
+- [ ] The wired headset microphone and headphone output both work.
+
+The Handy application, physical microphone, model download, transcription, and wired-headset steps have not been performed on this host. The checklist is a per-machine verification procedure, not a claimed pass.
 
 ## References
 
