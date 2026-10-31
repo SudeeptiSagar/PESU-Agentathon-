@@ -328,4 +328,4 @@ These are open dependencies, not excuses. They are listed so the rehearsal does 
 | Venue network not tested | Task A may have to run on the mock mirror | M3, M4 | R2 |
 | Task D (logged-in Chrome / Gmail) not proven | Do not claim it; only the mock inbox is tested offline | M3, M4 | Only after BRW-07 proof |
 | Piper not proven on the demo machine | Browser speech fallback may be the live path | M2 | Before R1 |
-| Jev backend not selected | Q&A must state the live `GATE_BACKEND` | M4 | Before R1 |
+| Demo gate backend | `rules` is the default and needs no disclosure; if `jev` is switched on, the operator must announce it and the Q&A must say the task sentence goes to a hosted service | M4 | Before R1 |

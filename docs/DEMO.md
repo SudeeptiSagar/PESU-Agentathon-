@@ -4,7 +4,7 @@
 |---|---|
 | Ticket | JEV-08 |
 | Owner | Abishek (M4) |
-| Version | 1.0, Sat 31 Oct 2026 |
+| Version | 1.1, Sun 01 Nov 2026 (adds the "What leaves the machine" data flow; states `rules` as the demo gate) |
 | Script source | [PRD.md](PRD.md), Section 17 (v3.1) |
 | Deck | **Outline only** (Section 8). The PowerPoint was descoped by the owner. Do not build a `.pptx` from this without asking. |
 | Rehearsal status | **Not rehearsed.** JEV-09 is blocked on CORE-13. No live timing, latency number or backup video exists yet. See Section 10 and [REHEARSAL.md](REHEARSAL.md). |
@@ -26,6 +26,7 @@ Read this with [PRD.md](PRD.md) Sections 10, 17 and 19, and [AGENTS.md](../AGENT
 3. Never complete the robot check by automation. A human clicks it; the agent waits.
 4. Never debug on stage. The operator calls a fallback at the first trigger, not after three attempts.
 5. Do not claim a rehearsal, a latency number, a pass rate or the Gmail stretch unless it has happened and is recorded. See Section 9.
+6. `GATE_BACKEND` is `rules` by default and the demo runs it. If anyone switches it to `jev`, say so before the first task and in Q&A answer 2: `jev` sends the task sentence and action context to a hosted service. See "What leaves the machine" in Section 7.
 
 ## 2. Timing at a glance
 
@@ -152,6 +153,7 @@ Presenter, exact:
 
 > "Three things to take away. One: autonomy with verification. The agent acts, the verifier reads the real page, and Ramesh confirms anything irreversible. Two: local and private. Speech in, speech out and the model run on our own hardware, and the profile is encrypted and never sent to the model. Three: stop works at any moment, in code. Next: a hosted phone version, more languages, and more logged-in sites. A browser a blind user can trust with the whole task."
 
+- If the gate is `jev` (only with disclosure): add one sentence to the Close, "One disclosure: the semantic gate is a hosted service, so the task sentence leaves this machine. It can run fully local." The default `rules` demo does not need this line.
 - Expected agent lines: none. The agent is idle after Task B or holding the Task C pending action.
 - Console: `DONE` after Task B, or `AWAITING_CONFIRM` after Task C. Leaving the pending action visible during the Close is good: it shows the agent waiting, not acting.
 - Fallback: if the demo overran, drop the first sentence and start at "One: autonomy with verification." Never drop the "stop works" line or the roadmap.
@@ -216,7 +218,7 @@ Run this on the demo machine, in this order. Times are relative to going on stag
 | 14 | `SEARCH_URL` | Default search, or the mock search URL | Contains `{q}` or the app refuses to start |
 | 15 | `STT_BACKEND` | `handy` (or `whisper` if that is what was tested) | Must match what the machine actually runs |
 | 16 | `TTS_BACKEND` | `piper` with a valid `PIPER_VOICE` path, else `browser` | A missing `.onnx` file fails at the worst moment |
-| 17 | `GATE_BACKEND` | `jev` (live-tested with `jev-1.13-free`), with `rules` as the offline fallback | Say the live backend in Q&A; `JEV_API_KEY` belongs only in the gitignored `.env` |
+| 17 | `GATE_BACKEND` | `rules` (the default, which sends nothing off the machine) | `jev` is opt-in: it sends the task sentence and action context to a hosted service, so it needs disclosure. `JEV_API_KEY` belongs only in the gitignored `.env`, and only when `jev` is on |
 | 18 | `GATE_PROCEED`, `GATE_ASK` | `0.85`, `0.5` unless tuned and recorded | Do not tune thresholds on stage |
 | 19 | `MAX_STEPS`, `MAX_FAILURES` | `30`, `2` | The loop must stop, not spin |
 | 20 | `BLOCKED_DOMAINS` | The intended list for the demo | An empty list is a policy gap, not a feature |
@@ -278,17 +280,41 @@ Rules:
 
 Keep answers under 30 seconds. Do not invent numbers.
 
+### What leaves the machine
+
+Read this before Q&A 2, and say it before the first task if the gate is not `rules`.
+
+**Default: nothing leaves the machine.** The demo runs `GATE_BACKEND=rules`, where the gate is local code: no key, no account, no outbound evaluator call. Speech recognition, speech output and the model run on the demo machine. The profile is encrypted at rest, and the model sees placeholders, not values. The only traffic off the machine is what the browser loads: the search engine, Wikipedia, and the localhost mock sites.
+
+**Opt-in: `jev`.** `GATE_BACKEND=jev` adds one HTTPS call per risky action to `https://opencode.ai/zen/v1/systemone`, a hosted service (OpenCode Zen, serving TypeSafe System One). That call is live-tested and can be enabled with a valid key, but only with disclosure, because of what it carries:
+
+| Sent | Not sent |
+|---|---|
+| The user's task sentence, up to 300 characters. A request like "email Rahul about my test results" would be sent as that sentence. | The profile object, or any real profile value |
+| The action name and its arguments, with sensitive keys dropped and text redacted | Aadhaar, bank account, IFSC, PIN, phone, address, password, OTP or card details |
+| The element label, type, kind and irreversible flag | The value typed into the element |
+| The hostname; paths, query strings and ports are stripped from this field | Full page content and screenshots |
+| The last three step lines, 200 characters each | - |
+| An optional page title or one-line summary, 300 characters | - |
+
+Placeholders such as `{aadhaar}` may be sent; values never are. Any run of four or more digits, and any IFSC-shaped string, is replaced with `[redacted]` before the request is built. The action arguments can include a navigate target URL or a search query, so in `jev` mode a search phrase leaves the machine too. The API key goes in the `Authorization` header only, never in the body, the logs or the audit log. Provider retention is not verified, so treat it as a third-party service. Full detail and the source lines are in [JEV_NOTES.md](JEV_NOTES.md) Section 10.
+
+Say it in one sentence:
+
+- Rules: "Nothing leaves this machine except the pages the browser visits. The safety gate is local code."
+- Jev: "The task sentence and the action context go to a hosted evaluator over HTTPS. Your profile values never do."
+
 **1. How do you stop it doing something wrong?**
-Five layers: a domain policy in code, a semantic gate, an irreversible-action hold, a DOM verifier that reads the real page, and the user's spoken confirmation. The LLM has no submit or commit tool. "Stop" halts the loop in code within one step, and Escape does the same from the Console.
+Five layers: a domain policy in code, a gate on risky actions (`rules` by default, semantic when `jev` is on), an irreversible-action hold, a DOM verifier that reads the real page, and the user's spoken confirmation. The LLM has no submit or commit tool. "Stop" halts the loop in code within one step, and Escape does the same from the Console.
 
 **2. Where does my data go?**
-Speech recognition, speech output and the model run on hardware we control, not in a cloud. The profile is encrypted at rest with a key derived from the PIN, and the model never sees real values: it sees placeholders like `{dob}`, and the executor substitutes them. Visited web pages are, of course, on the internet. There is no cloud backend and no user account.
+Speech recognition, speech output and the model run on hardware we control, not in a cloud. The profile is encrypted at rest with a key derived from the PIN, and the model never sees real values: it sees placeholders like `{dob}`, and the executor substitutes them. The safety gate is local code too, and the default `GATE_BACKEND=rules` makes no evaluator call at all. `jev` is opt-in; it would send the task sentence and action context to a hosted service, and we say so whenever it is switched on. Visited web pages are, of course, on the internet. There is no cloud backend and no user account. The field-by-field list is in "What leaves the machine" above.
 
 **3. Do you solve CAPTCHA, OTP or passwords?**
 No, and we never will. Those are human-only steps. The agent detects them, saves its state, says what is needed, waits for "done", re-checks, and resumes. Payment details are the same: the agent stops and hands over. That is a product rule, not a limitation we are working around.
 
 **4. What is Jev, and is it the safety guarantee?**
-Jev is a fast semantic check: does this action serve the user's stated goal, and is this the right field for this value? Its probability is not independent proof, so it is not the guarantee. The guarantees are the deterministic layers: the domain policy, the irreversible hold, the verifier and the user's confirmation. The gate backend is switchable. Today it is `jev` live, with the rules layer as the fail-safe if the key or network is missing.
+Jev is a fast semantic check: does this action serve the user's stated goal, and is this the right field for this value? Its probability is not independent proof, so it is not the guarantee. The guarantees are the deterministic layers: the domain policy, the irreversible hold, the verifier and the user's confirmation. The gate backend is switchable and defaults to `rules`, which sends nothing off the machine. `jev` is opt-in and live-tested; if it is on, we disclose that the task sentence goes to a hosted service.
 
 **5. Why not use browser-use or an existing agentic browser?**
 Because the safety checks have to sit in the action path. We wrote our own Playwright tool layer so a click can be held, a value can be checked against the real DOM, and a tool the model can call to submit simply does not exist. Existing agents are built for sighted users who can watch and correct them; our user cannot see a wrong click. We are not claiming better general browsing, only a safer path for this user.
@@ -365,7 +391,7 @@ Evidence line: "The LLM has no submit tool. The state machine commits, and only 
 ### Slide 6: Safety layers
 
 - Domain policy and site directory: blocked and unexpected sites
-- Jev gate: does the action serve the goal; is this the right field
+- Jev gate (opt-in): does the action serve the goal; is this the right field
 - Irreversible-action gate: flags on buttons, form submit type, URL hints; hold, never click
 - DOM verifier: expected versus actual, with type-aware normalisation
 - Read-back and spoken confirmation: the human check the machine cannot replace
@@ -390,8 +416,8 @@ Evidence line: "Expected 560001, actual 56000. The Console shows both."
 - Profile encrypted with Fernet; key derived from the PIN with PBKDF2 and a random salt
 - Aadhaar, bank account, IFSC masked to the last four on screen and in logs
 - Placeholders in prompts; the model never receives real values
-- No user accounts, no cloud backend
-- Pages visited are on the internet; we do not claim offline browsing
+- No user accounts; the gate is local code by default
+- Pages visited are on the internet; so is Jev, if it is switched on (opt-in, disclosed)
 
 Evidence line: "The Console the judges see is the same masked view the user's helper sees."
 
@@ -410,7 +436,7 @@ Evidence line: "Read, act, trust: the third one is the product."
 
 - Tasks B and C run on our mock portal and mock shop
 - Task A runs on the real web when the venue network allows; otherwise a mock mirror
-- Jev is a semantic layer, not the guarantee; it is live-tested, with rules as the fail-safe
+- The demo runs the `rules` gate; Jev is opt-in, live-tested, and sends the task sentence to a hosted service when enabled
 - No payments, no passwords, no CAPTCHA bypass, no real government submission
 - Timings and pass rates will come from rehearsal; none are claimed today
 - Task D, reading Gmail in the logged-in Chrome profile, is not claimed unless the BRW-07 proof and a clean Gmail read run on the demo machine
@@ -449,6 +475,7 @@ Source: [PRD.md](PRD.md), Section 19.
 | "Jev proves the action is safe." | "Jev is a fast semantic check. The guarantees are the domain policy, the irreversible hold, the verifier and the user's confirmation." |
 | "It submits real government applications." | "It submits to our mock portal in the demo. Real submissions are out of scope." |
 | "It runs fully offline." | "Speech, speech output and the model run on our own hardware. Visited pages are on the internet." |
+| "Nothing ever leaves the machine." | "With the default `rules` gate, nothing does except the pages the browser visits. `jev` is opt-in and sends the task sentence and action context to a hosted service; we disclose it when it is on." |
 | "It is production ready." | "It is a 24-hour prototype with a deliberately narrow, tested demo path." |
 | "We rehearsed and the timings are measured." | "Rehearsals are blocked on CORE-13. The timings in this script are budgets." |
 | "The app is fully accessibility audited." | "The Console is designed for keyboard and screen-reader use. The audit is UI-03 and only counts when it is done." |
