@@ -33,6 +33,8 @@ from tests.e2e.harness import (
 PORTAL_HTML = (FIXTURES / "portal.html").read_text(encoding="utf-8")
 SHOP_HTML = (FIXTURES / "shop.html").read_text(encoding="utf-8")
 
+pytestmark = pytest.mark.e2e
+
 
 @pytest_asyncio.fixture
 async def page():

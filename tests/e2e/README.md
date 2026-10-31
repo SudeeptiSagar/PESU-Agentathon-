@@ -3,9 +3,10 @@
 Scripted typed runs of demo tasks A, B and C over the real `/ws/console` WebSocket, plus
 the safety-chain checks for the verifier, gate, read-back and audit log.
 
-The tests are honest about the current build. CORE-11 (`app/agent.py` integration) is
-still a stub, so the three demo scenarios report **BLOCKED** with the exact stub names.
-Nothing here turns stub behaviour into a pass.
+The tests are honest about the current build. With CORE-11 merged, demo A and demo C
+pass against the real app and browser. Demo B still reports **BLOCKED** with the exact
+CORE-12 gap (verify, read-back and the confirm state machine). Nothing here turns partial
+behaviour into a pass.
 
 ## What is here
 
@@ -48,9 +49,10 @@ is never accepted.
 | Read-back | `readback.build_readback`, `.describe_pending` | JEV-03 | B, C |
 | Audit | `audit.log_event` | JEV-06 | safety chain |
 
-Current state: every row above is still a CORE-01 stub, so A, B and C are BLOCKED.
-The safety-chain fixture, Console transport and event-guard tests run now; the verifier,
-gate, read-back and audit checks skip with the same stub names.
+Current state: every contract member in the matrix is implemented. Demo A and demo C
+pass. Demo B skips with `blocked until CORE-12 (verify/readback/confirm state machine)`,
+detected from the CORE-12 note in `agent.begin_confirmation`. The safety-chain fixture,
+Console transport, verifier, gate, read-back and audit checks all run now.
 
 ## Run
 
@@ -60,31 +62,37 @@ From the repository root:
 python -m pip install pytest-asyncio
 python -m playwright install chromium
 
-python -m pytest tests/e2e/test_safety_chain.py -q
-python -m pytest tests/e2e -q
-python -m tests.e2e.run_demo
-python -m pytest tests/test_smoke.py -q
+python -m pytest -q                # unit tests only; e2e is deselected
+python -m pytest -m e2e -q -rs     # demos plus safety chain, about 10s
+python -m tests.e2e.run_demo       # A PASS, B BLOCKED, C PASS
 ```
+
+Every module under `tests/e2e` is marked `e2e` and `pytest.ini` sets
+`addopts = -m "not e2e"`, so a plain `pytest -q` stays fast. The CLI `-m e2e` overrides
+the default and runs them. The harness forces `BROWSER_HEADLESS=True` and
+`GATE_BACKEND="rules"` for the life of the server, so no browser windows open and no
+live Jev call can change a decision. Every Console wait is capped at 30 seconds
+(`E2E_WAIT` in `harness.py`), which is enough for a cold browser start.
 
 `pytest.ini` already sets `asyncio_mode = auto`, so the async tests need no plugin flag.
 The harness starts and stops its own FastAPI server, so port 8080 does not need to be free
-or running. The fixture server picks its own free port.
+or running. The fixture server picks its own free port. Each `app_server()` run gets a
+fresh hub, so the CLI can run A and C one after the other in one process.
 
 ## How to flip BLOCKED to PASS
 
-The skip reason names the exact source member. Replace the stub body, keep the Section 12
-signature, and rerun. The detector clears as soon as `inspect.getsource` no longer sees
-`STUB:` for that member.
+The skip reason names the exact gap. For a contract member, replace the stub body, keep
+the Section 12 signature, and rerun. The stub detector clears as soon as
+`inspect.getsource` no longer sees `STUB:` for that member.
 
 One-line unblock per scenario:
 
-- **A:** land CORE-11's real `agent.handle_utterance` / `run_task` plus CORE-08's
-  `ToolExecutor.run`, BRW-02's `BrowserController.start/goto`, and BRW-03's
-  `perception.snapshot/main_text`.
-- **B:** A plus JEV-02 `verifier.verify`, JEV-03 read-back, JEV-04/05 `gate.check`,
-  BRW-04 `humancheck.challenge_present`, and CORE-12 `commit_pending`.
-- **C:** B's gate, read-back and human check plus CORE-12 `commit_pending`; the pending
-  description must include the total 249.
+- **A:** passing since CORE-08/09/10/11 and BRW-02/03.
+- **B:** land CORE-12's verify/read-back/confirm state machine in
+  `agent.begin_confirmation` and `tools.commit_pending`. The test skip clears when
+  `begin_confirmation` no longer says CORE-12 adds the form check.
+- **C:** passing since CORE-11; the held Place order and payment hand-off need no
+  read-back.
 
 When CORE-11 lands, run `python -m tests.e2e.run_demo` first. It prints the failing
 assertion with a redacted Console event log and the scripted LLM calls, so the first

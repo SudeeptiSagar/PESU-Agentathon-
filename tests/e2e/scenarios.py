@@ -17,6 +17,7 @@ from typing import Any
 
 from tests.e2e.harness import (
     ConsoleClient,
+    E2E_WAIT,
     FakeLLM,
     FixtureSite,
     PROFILE,
@@ -30,6 +31,7 @@ from tests.e2e.harness import (
     fixture_site,
     redact,
     require_ready,
+    seed_session_profile,
     tool,
 )
 
@@ -98,6 +100,7 @@ async def _demo_run(scenario: str, script: Sequence[Any]) -> AsyncIterator[DemoR
         fake = stack.enter_context(fake_llm(script))
         async with app_server() as server:
             async with console_client(server) as client:
+                seed_session_profile()  # UI-07 unlock is not part of these runs
                 yield DemoRun(scenario=scenario, site=site, fake=fake, client=client)
 
 
@@ -131,8 +134,8 @@ async def scenario_a() -> str:
         try:
             await client.wait_for_state("IDLE", timeout=15)
             await client.send_utterance("Find out where Kalpana Chawla was born.")
-            answer = await client.wait_for_speak("Karnal", timeout=90)
-            await client.wait_for_state("DONE", timeout=30)
+            answer = await client.wait_for_speak("Karnal", timeout=E2E_WAIT)
+            await client.wait_for_state("DONE", timeout=E2E_WAIT)
             steps = _assert_steps(client, minimum=2)
             actions = [str(step.data.get("action", "")).casefold() for step in steps]
             assert any("search" in action for action in actions), (
@@ -162,7 +165,7 @@ async def scenario_b() -> str:
                 "Apply for the disability pension on the demo portal."
             )
 
-            await client.wait_for_human_check(timeout=120)
+            await client.wait_for_human_check(timeout=E2E_WAIT)
             assert site.portal_submissions == 0, (
                 "the portal form was submitted before the human check and confirm"
             )
@@ -173,7 +176,7 @@ async def scenario_b() -> str:
             site.mark_human_done()
             await asyncio.sleep(1.0)  # let the fixture page poll the human-done flag
             await client.send_utterance("done")
-            pending = await client.wait_for_pending(timeout=90)
+            pending = await client.wait_for_pending(timeout=E2E_WAIT)
             pending_text = str(pending.data.get("description", "")).casefold()
             assert "submit" in pending_text or "application" in pending_text, (
                 f"pending description does not name the submit action: {pending_text!r}"
@@ -181,7 +184,7 @@ async def scenario_b() -> str:
 
             instruction = await client.wait_for_speak(
                 "Say confirm to go ahead, or say change followed by the field name.",
-                timeout=60,
+                timeout=E2E_WAIT,
             )
             chunks = _speak_texts(client, until_seq=instruction.seq)
             assert_readback_safe(chunks)
@@ -222,7 +225,7 @@ async def scenario_b() -> str:
 
             confirm_event = await client.send_utterance("confirm")
             client.assert_no_irreversible_before_confirm(("submit",))
-            acknowledgment = await client.wait_for_ack(timeout=60,
+            acknowledgment = await client.wait_for_ack(timeout=E2E_WAIT,
                                                         after_seq=confirm_event.seq)
             await site.wait_for_portal_submission(timeout=20)
             assert site.portal_attempts >= 1, "confirm did not trigger a submit click"
@@ -252,7 +255,7 @@ async def scenario_c() -> str:
             await client.wait_for_state("IDLE", timeout=15)
             await client.send_utterance("Order a pack of AA batteries from the demo shop.")
 
-            pending = await client.wait_for_pending(timeout=120)
+            pending = await client.wait_for_pending(timeout=E2E_WAIT)
             description = str(pending.data.get("description", ""))
             lowered = description.casefold()
             assert "order" in lowered or "pay" in lowered, (
@@ -278,7 +281,7 @@ async def scenario_c() -> str:
                 f"expected exactly one shop order after confirm, got {site.shop_orders}"
             )
             handoff = await client.wait_for_payment_handoff(
-                timeout=60, after_seq=confirm_event.seq
+                timeout=E2E_WAIT, after_seq=confirm_event.seq
             )
             handoff_text = str(handoff.data.get("text") or handoff.data.get("name") or "")
             assert ("payment" in handoff_text.casefold()
