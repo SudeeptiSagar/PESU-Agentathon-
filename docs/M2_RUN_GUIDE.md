@@ -31,10 +31,13 @@ The browser speech backend is the default. For Piper, set `$env:VITE_TTS_BACKEND
 Build the production frontend from `client`:
 
 ```powershell
+cd client
+npm ci
 npm run build
+cd ..
 ```
 
-This writes a self-contained production page to `client/console.html` for FastAPI's `/console` route, plus Vite preview assets under `client/dist/`. The Vite preview at **http://127.0.0.1:4173/console.dev.html** does not proxy WebSockets; use the development server for a proxied preview. For production integration, start FastAPI after the build and open **http://127.0.0.1:8080/console**. Stop Vite preview with `Ctrl+C`.
+This compiles the React application into `client/dist/` (served at `/console` and `/assets`) and writes `client/console.html` and `client/dist/console.html`. For production integration, start FastAPI after the build (`python -m app.main`) and open **http://127.0.0.1:8080/console**.
 
 ## C. Run the Python voice module and tests
 
