@@ -35,6 +35,7 @@ IRREVERSIBLE_KINDS = [
                           r"file (return|complaint)|lodge)\b|जमा करें", re.I)),
 ]
 LINK_ACTION_KINDS = {"pay", "delete", "send", "post"}
+LINK_COMMAND_MAX_WORDS = 4
 # Same idea for machine names: "place-order", "send_btn", "/cart/checkout/pay", "data-action=delete".
 HINT_KINDS = [
     ("pay", re.compile(r"(^|[^a-z])(pay|payment|buy|purchase|place[-_ ]?order|confirm[-_ ]?order|checkout[-_/]?(submit|pay|confirm))([^a-z]|$)", re.I)),
@@ -185,10 +186,9 @@ MAIN_TEXT_JS = r"""
   // Most specific article body first (Wikipedia, schema.org), then generic landmarks.
   const candidates = ['#mw-content-text .mw-parser-output', '[itemprop=articleBody]', 'article', 'main,[role=main]']
     .flatMap(sel => Array.from(document.querySelectorAll(sel)));
-  const root = candidates.find(el => el.innerText.trim().length >= 200) || document.body;
-  if (!root) return '';
-  const h1 = document.querySelector('h1');
-  const title = h1 && !root.contains(h1) ? h1.innerText.trim() : '';
+  const first = candidates.find(el => el.innerText.trim().length >= 200) || document.body;
+  if (!first) return '';
+  const read = root => {
   const blockOf = node => {
     let el = node.parentElement;
     while (el && el !== root && getComputedStyle(el).display.startsWith('inline')) el = el.parentElement;
@@ -217,9 +217,18 @@ MAIN_TEXT_JS = r"""
       : target.innerText;
     blocks.push(text);
   }
-  const text = blocks.join('\n');
+  return blocks.join('\n');
+  };
+  let root = first, text = read(first);
+  // The landmark held only a sliver of a big page (portal home pages): read the whole body instead.
+  if (root !== document.body && text.trim().length < 300 && document.body.innerText.length > 5 * text.length) {
+    const whole = read(document.body);
+    if (whole.trim().length > text.trim().length) { root = document.body; text = whole; }
+  }
   // Pages that are mostly a form or app shell: fall back to the visible text of the root.
   const body = text.trim().length >= 80 ? text : root.innerText;
+  const h1 = document.querySelector('h1');
+  const title = h1 && !root.contains(h1) ? h1.innerText.trim() : '';
   return title ? title + '\n' + body : body;
 }
 """
@@ -316,8 +325,13 @@ def _summary(title: str, headings: list, fields: list, buttons: list, links: lis
 # Apps that render their content after "load": wait for these before reading (Task D, PRD 3.2).
 READY_SELECTORS = {
     "mail.google.com": "tr.zA, div.a3s, h2.hP",   # inbox rows, message body, message subject
+    # Search results arrive after "load" (BRW-06); "no results" pages count as ready too.
+    "html.duckduckgo.com": ".result, .no-results",
+    "duckduckgo.com": "[data-testid=result], [data-testid=no-results]",
+    "www.bing.com": "li.b_algo, .b_no",
 }
-READY_TIMEOUT_MS = 10_000
+READY_TIMEOUT_MS = {"mail.google.com": 10_000}   # Gmail is slow to render; others get the default
+READY_DEFAULT_TIMEOUT_MS = 5_000
 
 
 # Site readers for main_text. Each returns "" when it does not apply, and the generic reader runs.
@@ -347,12 +361,15 @@ SITE_TEXT_JS = {"mail.google.com": GMAIL_TEXT_JS}
 
 
 async def _wait_ready(page) -> None:
-    selector = READY_SELECTORS.get(urlparse(page.url).hostname or "")
-    if selector:
-        try:
-            await page.wait_for_selector(selector, timeout=READY_TIMEOUT_MS)
-        except Exception:
-            pass   # read whatever is there; the agent can try again
+    host = urlparse(page.url).hostname or ""
+    selector = READY_SELECTORS.get(host)
+    # A page that never became ready (e.g. a 403 block page) is not waited for twice.
+    if not selector or getattr(page, "_agent_not_ready_url", None) == page.url:
+        return
+    try:
+        await page.wait_for_selector(selector, timeout=READY_TIMEOUT_MS.get(host, READY_DEFAULT_TIMEOUT_MS))
+    except Exception:
+        page._agent_not_ready_url = page.url   # read whatever is there; the agent can try again
 
 
 async def snapshot(page, session) -> dict:
@@ -402,7 +419,11 @@ async def snapshot(page, session) -> dict:
     for link in result["links"]:
         # A link that performs an irreversible action ("Place order", href=/mail/delete) is reported
         # as a button, so the executor holds it like any other irreversible control.
-        irreversible, kind = classify_button(link["text"], "link", None, link["hints"],
+        # Link text counts only when it is a short command ("Buy now", "Delete this message"):
+        # gov.in and news links are full of "post of ...", "Post-Matric", "Pay Commission".
+        # Target hints (href=/mail/delete) count whatever the text.
+        short = len(link["text"].split()) <= LINK_COMMAND_MAX_WORDS
+        irreversible, kind = classify_button(link["text"] if short else "", "link", None, link["hints"],
                                              cookie_banner=link["cookie_banner"])
         # "Apply for ..." or "I agree" as a link is navigation; only action verbs promote a link.
         if irreversible and kind in LINK_ACTION_KINDS:

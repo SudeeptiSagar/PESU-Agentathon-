@@ -200,6 +200,15 @@ async def test_main_text_reads_mail_body(page, base):
     assert "Reply" not in text and "Delete" not in text
 
 
+async def test_main_text_reads_whole_page_when_landmark_is_a_sliver(page):
+    # BRW-06, seen on Bing headless: <main> held only a toolbar while the results sat outside it.
+    results = "".join(f"<p>Result {i}: Kalpana Chawla was born in Karnal, Haryana, India.</p>" for i in range(12))
+    await page.set_content(f"<main><p>Skip to content. Accessibility feedback. Rewards and settings.</p>"
+                           f"<p>Images. Videos. Maps. News. More.</p></main><div id=results>{results}</div>")
+    text = await main_text(page)
+    assert "Result 0: Kalpana Chawla was born in Karnal" in text and "Result 11" in text
+
+
 async def test_main_text_on_form_page_is_not_empty(page, base):
     await page.goto(f"{base}/portal/apply.html")
     assert "Personal Details" in await main_text(page)
