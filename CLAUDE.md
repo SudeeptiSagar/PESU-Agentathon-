@@ -41,6 +41,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && playwright install chromium
 cp .env.example .env              # OLLAMA_URL, LLM_MODEL, SEARCH_URL, voice and gate backends
 (cd mock_site && python -m http.server 8000) &
+(cd client && npm ci && npm run build)   # once: builds the Voice Console that /console serves
 python -m app.main                # backend on http://localhost:8080, Console at /console
 pytest -q
 ```

@@ -747,3 +747,54 @@ async def test_results_and_page_text_hide_saved_values(setup, monkeypatch):
     monkeypatch.setattr(perception, "main_text", main_text)
     text = await ex.run(act("read_page", mode="main_text"), session, browser)
     assert "Ramesh" not in text and "9876543210" not in text and "[saved phone]" in text
+
+
+
+# ================================================================ the total shown on the page is kept with the held action
+from app.tools import find_total  # noqa: E402
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Your cart\nTotal: 249 rupees\nPlace order", "249 rupees"),
+    ("Total \u20b91,249.50", "\u20b91,249.50"),
+    ("Grand total: Rs. 500", "Rs. 500"),
+    ("TOTAL INR 75", "INR 75"),
+    ("Subtotal 100 rupees\nTotal 118 rupees", "118 rupees"),          # the last total wins, "Subtotal" is not a total
+    ("Total items: 3", None),                                         # a count is not money
+    ("Total: 3", None),
+    ("Subtotal 100 rupees", None),
+    ("Free delivery", None),
+    ("", None),
+])
+async def test_find_total_reads_only_real_amounts(monkeypatch, text, expected):
+    async def main_text(page, max_chars=4000):
+        return text
+    monkeypatch.setattr(perception, "main_text", main_text)
+    assert await find_total(object()) == expected
+
+
+async def test_find_total_survives_a_page_that_cannot_be_read(monkeypatch):
+    async def broken(page, max_chars=4000):
+        raise RuntimeError("navigating")
+    monkeypatch.setattr(perception, "main_text", broken)
+    assert await find_total(object()) is None
+
+
+async def test_a_held_action_carries_the_total_when_the_page_shows_one(setup, monkeypatch):
+    ex, session, browser, page = setup(PORTAL_URL)
+
+    async def main_text(p, max_chars=4000):
+        return "Cart\nTotal: 249 rupees"
+    monkeypatch.setattr(perception, "main_text", main_text)
+    await ex.run(act("click", element_id="b1"), session, browser)
+    assert session.pending_action["total_text"] == "249 rupees"
+
+
+async def test_a_held_action_without_a_total_has_no_total_key(setup, monkeypatch):
+    ex, session, browser, page = setup(PORTAL_URL)
+
+    async def main_text(p, max_chars=4000):
+        return "Please review your details"
+    monkeypatch.setattr(perception, "main_text", main_text)
+    await ex.run(act("click", element_id="b1"), session, browser)
+    assert "total_text" not in session.pending_action

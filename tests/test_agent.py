@@ -468,7 +468,8 @@ async def test_a_gate_block_is_spoken_and_not_executed(w):
     assert any("blocked by the safety check" in line for line in w.session.history)
 
 
-async def test_an_unavailable_gate_asks_instead_of_proceeding(w):
+async def test_an_unavailable_gate_asks_instead_of_proceeding(w, monkeypatch):
+    monkeypatch.setattr(config, "GATE_BACKEND", "llm")                  # the semantic backends judge clicks
     w.llm_script = [call("click", element_id="l1")]
     w.gate_script = [RuntimeError("jev down")]
     await w.hear("open help")
@@ -476,21 +477,68 @@ async def test_an_unavailable_gate_asks_instead_of_proceeding(w):
     assert "safety check is not available" in w.say()[-1]
 
 
-async def test_the_gate_judges_risky_calls_only(w):
+async def test_the_gate_judges_risky_calls_only(w, monkeypatch):
+    monkeypatch.setattr(config, "GATE_BACKEND", "llm")
     w.llm_script = [call("read_page", mode="summary"), call("scroll", direction="down"),
-                    call("click", element_id="b1"), call("click", element_id="l1"),
-                    call("finish", summary="ok")]
-    w.executor.results = ["ok: x", "ok: scrolled down", "held: no", "ok: clicked"]
-    await w.hear("go")
-    judged = [a["name"] + ":" + str(a["args"].get("element_id", "")) for a, _ in w.gate_calls]
-    assert judged == []                                                 # the loop stopped at the held click
-    w.session.state = "IDLE"
-    w.llm_script, w.gate_calls = [call("click", element_id="l1"), call("finish", summary="ok")], []
-    w.executor.results = ["ok: clicked 'Help'", "finish: ok"]
+                    call("click", element_id="l1"), call("finish", summary="ok")]
+    w.executor.results = ["ok: x", "ok: scrolled down", "ok: clicked 'Help'", "finish: ok"]
     await w.hear("open help")
-    assert [a["name"] for a, _ in w.gate_calls] == ["click"]
+    assert [a["name"] for a, _ in w.gate_calls] == ["click"]            # reading, scrolling and finishing are not judged
     action, context = w.gate_calls[0]
-    assert context["goal"] == "open help" and context["domain"] == "localhost" and context["element"]["label"] == "Help"
+    assert context["goal"] == "open help" and context["domain"] == "localhost"
+    assert context["element"]["label"] == "Help"
+    assert context["sensitive_fills"] == set()
+
+
+async def test_an_irreversible_click_is_never_sent_to_the_gate(w, monkeypatch):
+    monkeypatch.setattr(config, "GATE_BACKEND", "llm")
+    w.llm_script = [call("click", element_id="b1")]
+    w.executor.results = ["error: stop here"] * 2
+    await w.hear("submit it")
+    assert w.gate_calls == []                                           # the executor holds it, the gate does not judge
+
+
+async def test_with_the_rules_gate_a_harmless_click_is_not_judged(w):
+    w.llm_script = [call("click", element_id="l1"), call("finish", summary="ok")]
+    await w.hear("open help")
+    assert w.gate_calls == [] and w.session.state == "DONE"             # no false alarms such as "Find a post office"
+
+
+async def test_saved_details_on_an_unapproved_site_go_to_the_approval_question_not_a_gate_block(w):
+    w.llm_script = [call("fill_field", field_id="f1", value_ref="{full_name}")]
+    w.executor.results = ["needs_approval: example.org"]
+    w.gate_script = [{"decision": "block", "reason": "domain not approved: example.org", "p": 0.01}]
+    w.browser.active.url = "http://example.org/apply"
+    await w.hear("fill my name")
+    assert w.gate_calls == []                                           # the gate is not consulted before approval
+    assert w.ctx.question == {"type": "approve_domain", "domain": "example.org"}
+    assert w.session.state == "NEEDS_USER"
+
+
+async def test_after_approval_the_gate_judges_the_fill_and_is_told_the_site_is_approved(w):
+    w.browser.active.url = "http://example.org/apply"
+    fill = call("fill_field", field_id="f1", value_ref="{full_name}")
+    w.llm_script = [fill, fill, call("finish", summary="ok")]            # asks, then the model retries the fill
+    w.executor.results = ["needs_approval: example.org", "ok: filled 'Full name' from the profile (full_name)", "finish: ok"]
+    await w.hear("fill my name")
+    await w.hear("yes")
+    assert [a["name"] for a, _ in w.gate_calls] == ["fill_field"]
+    assert w.gate_calls[0][1]["sensitive_fills"] == {"example.org"}
+    assert w.gate_calls[0][1]["approved_domains"] == {"example.org"}
+
+
+async def test_an_unresolvable_address_goes_to_the_executor_so_the_model_is_told_to_search(w):
+    w.llm_script = [call("navigate", target="kalpana chawla birthplace"), call("finish", summary="ok")]
+    w.executor.results = ["error: I do not know a site called 'kalpana chawla birthplace'. Use web_search to find it"]
+    w.gate_script = [{"decision": "block", "reason": "unknown destination", "p": 0.01}]
+    await w.hear("find it")
+    assert w.gate_calls == [] and any("web_search" in line for line in w.session.history)
+
+
+async def test_a_known_site_name_is_still_judged_by_the_gate(w):
+    w.llm_script = [call("navigate", target="wikipedia"), call("finish", summary="ok")]
+    await w.hear("open wikipedia")
+    assert [a["name"] for a, _ in w.gate_calls] == ["navigate"]
 
 
 # ---------------------------------------------------------------- stop, pause, and the other commands
@@ -607,6 +655,96 @@ async def test_unexpected_crash_is_reported_not_swallowed(w, monkeypatch):
     await w.hear("go")
     assert [e for e in w.events if e["type"] == "alert" and e["level"] == "error"]
     assert w.session.state == "NEEDS_USER"
+
+
+# ---------------------------------------------------------------- Space key, voice failure, refocus, audit
+async def test_space_pauses_a_running_task_and_continues_a_paused_one(w):
+    release = asyncio.Event()
+    w.llm_script = [call("scroll", direction="down")] * 3
+    w.executor.results = [release]
+    await agent.handle_utterance("scroll", w.ctx)
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if w.executor.calls:
+            break
+    await agent.toggle_pause(w.ctx)
+    assert w.session.state == "PAUSED"
+    w.llm_script, w.executor.results = [call("finish", summary="ok")], ["finish: ok"]
+    await agent.toggle_pause(w.ctx)
+    await w.settle()
+    assert w.session.state == "DONE"
+
+
+async def test_space_with_nothing_running_says_so(w):
+    await agent.toggle_pause(w.ctx)
+    assert w.say() == ["There is nothing to pause."]
+
+
+async def test_a_broken_voice_never_stops_the_agent(w):
+    class BrokenVoice:
+        def interrupt(self):
+            pass
+
+        async def speak(self, text):
+            raise RuntimeError("no voice model")
+    w.ctx.tts = BrokenVoice()
+    w.llm_script = [call("finish", summary="She was born in Karnal.")]
+    await w.hear("where was she born")
+    assert w.session.state == "DONE" and w.ctx.tts is None              # it carried on and stopped using the voice
+    assert "She was born in Karnal." in w.say()                          # the text still reached the Console
+    assert [e for e in w.events if e["type"] == "alert" and "Speech output" in e["message"]]
+
+
+async def test_the_console_gets_the_focus_back_after_each_step_and_after_speech(w):
+    focused = []
+
+    async def refocus():
+        focused.append(1)
+    w.browser.refocus_console = refocus
+    w.ctx.tts = SimpleNamespace(speak=lambda text: asyncio.sleep(0), interrupt=lambda: None)
+    w.llm_script = [call("scroll", direction="down"), call("finish", summary="ok")]
+    w.executor.results = ["ok: scrolled down", "finish: ok"]
+    await w.hear("scroll once")
+    assert len(focused) >= 2
+
+
+async def test_a_failing_refocus_is_ignored(w):
+    async def refocus():
+        raise RuntimeError("no window")
+    w.browser.refocus_console = refocus
+    w.llm_script = [call("finish", summary="ok")]
+    await w.hear("anything")
+    assert w.session.state == "DONE"
+
+
+async def test_the_audit_log_gets_the_key_events_and_never_the_page_or_profile(w, monkeypatch):
+    logged = []
+    monkeypatch.setattr(agent.audit, "log_event", lambda event, **fields: logged.append((event, fields)))
+    w.llm_script = [call("click", element_id="b1")]
+
+    async def hold(call_, session, browser):
+        session.pending_action = {"element_id": "b1", "label": "Submit application", "kind": "submit",
+                                  "url": SNAP["url"], "domain": "localhost", "selector": "#b1"}
+        return "held: 'Submit application' (submit) was NOT pressed."
+    w.executor.run = hold
+    await w.hear("apply for the pension")
+    kinds = [event for event, _ in logged]
+    assert kinds[0] == "task_start" and "step" in kinds and "held" in kinds
+    held = dict(logged)["held"]
+    assert held == {"label": "Submit application", "control": "submit"}
+    await agent.stop(w.ctx)
+    assert logged[-1][0] == "stop"
+    blob = json.dumps(logged)
+    assert not any(v in blob for v in DEMO_PROFILE.values() if len(v) > 5)
+
+
+async def test_a_broken_audit_log_never_stops_the_agent(w, monkeypatch):
+    def boom(event, **fields):
+        raise OSError("disk full")
+    monkeypatch.setattr(agent.audit, "log_event", boom)
+    w.llm_script = [call("finish", summary="ok")]
+    await w.hear("anything")
+    assert w.session.state == "DONE"
 
 
 # ================================================================ end to end with real Chromium
