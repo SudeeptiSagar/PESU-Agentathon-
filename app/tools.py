@@ -51,7 +51,7 @@ _S = {"type": "string"}
 _I = {"type": "integer"}
 
 TOOL_SCHEMAS: list[dict] = [
-    _tool("navigate", "Open a known site by name (alias) or a URL.", target=_S),
+    _tool("navigate", "Open a known site by name (alias) or a URL. For anything else use web_search.", target=_S),
     _tool("web_search", "Search the web for a query.", query=_S),
     _tool("go_back", "Go back to the previous page."),
     _tool("scroll", "Scroll the page.", direction={"type": "string", "enum": ["up", "down"]}),
@@ -109,17 +109,75 @@ def _load_sites() -> list[dict]:
         return []
 
 
-def resolve_target(target: str) -> dict:
-    """Map a sites.json alias, URL or bare domain to {"url","domain","site_id","trusted"}."""
-    # STUB: CORE-09 (full alias matching and phrasings; web_search fallback in the agent)
-    t = target.strip().lower()
+# Words people put around a site name ("open the pension portal please"). They are dropped from both
+# the spoken target and the aliases before comparing, so "my mail" and "the mail" both mean "mail".
+FILLER_WORDS = frozenset({
+    "open", "go", "goto", "to", "visit", "launch", "show", "take", "me", "the", "a", "an", "my",
+    "please", "website", "site", "page", "homepage", "home", "on", "in", "into", "browse", "load",
+    "navigate", "up", "pull", "bring", "start"})
+HOST_RE = re.compile(r"^(?:(?:[a-z0-9-]+\.)+[a-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3})(?::\d{1,5})?(?:[/?#]\S*)?$", re.I)
+_LOCAL_HOST_RE = re.compile(r"^(?:localhost|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:[/?#]|$)", re.I)
+UNRESOLVED = {"url": None, "domain": None, "site_id": None, "trusted": False, "kind": "search"}
+
+
+def normalize_phrase(text: str) -> str:
+    """Lowercase, split into words, drop filler words: "Open the Pension Portal!" -> "pension portal"."""
+    words = re.findall(r"[a-z0-9.]+", str(text).lower().replace("_", " "))
+    return " ".join(w for w in (x.strip(".") for x in words) if w and w not in FILLER_WORDS)
+
+
+def _site_index() -> dict[str, dict]:
+    """normalized id or alias -> site. On a clash the first site in sites.json wins."""
+    index: dict[str, dict] = {}
     for site in _load_sites():
-        if t == site["id"] or t in site.get("aliases", []):
-            return {"url": site["url"], "domain": site["domain"],
-                    "site_id": site["id"], "trusted": bool(site.get("trusted"))}
-    url = target if "://" in target else f"https://{target}"
-    return {"url": url, "domain": (urlparse(url).hostname or "").lower(),
-            "site_id": None, "trusted": False}
+        for name in [site.get("id", ""), *site.get("aliases", [])]:
+            key = normalize_phrase(name)
+            if key:
+                index.setdefault(key, site)
+    return index
+
+
+def _result(url: str, domain: str, site: dict | None, kind: str) -> dict:
+    return {"url": url, "domain": domain, "site_id": site["id"] if site else None,
+            "trusted": is_trusted_domain(domain), "kind": kind}
+
+
+def resolve_target(target: str) -> dict:
+    """Turn what the user or LLM called a destination into {"url","domain","site_id","trusted","kind"}.
+
+    Tried in this order: a sites.json id or alias (filler words ignored); a full http(s) URL; a bare
+    domain, localhost or IP address, with optional port and path. Anything else comes back with
+    url=None and kind="search": the agent should use web_search instead of guessing an address.
+    kind is "site", "url", "domain" or "search". trusted comes from sites.json (see is_trusted_domain).
+    URLs with a username in them (https://good.example@evil.example), non-web schemes and invalid
+    ports are not resolved.
+    """
+    text = (target or "").strip()
+    if not text or len(text) > 2000:
+        return dict(UNRESOLVED)
+    explicit = re.match(r"^([a-z][a-z0-9+.-]*)://", text, re.I)
+    if not explicit and "/" not in text and "@" not in text:
+        site = _site_index().get(normalize_phrase(text))
+        if site:
+            return _result(site["url"], str(site["domain"]).lower(), site, "site")
+    if explicit:
+        if explicit.group(1).lower() not in ("http", "https"):
+            return dict(UNRESOLVED)
+        url, kind = text, "url"
+    elif HOST_RE.match(text):
+        url, kind = ("http://" if _LOCAL_HOST_RE.match(text) else "https://") + text, "domain"
+    else:
+        return dict(UNRESOLVED)
+    try:
+        parsed = urlparse(url)
+        parsed.port  # raises ValueError for an invalid port
+    except ValueError:
+        return dict(UNRESOLVED)
+    domain = (parsed.hostname or "").lower().rstrip(".")
+    if not domain or parsed.username is not None or parsed.password is not None:
+        return dict(UNRESOLVED)
+    matches = [s for s in _load_sites() if str(s.get("domain", "")).lower() == domain]
+    return _result(url, domain, matches[0] if len(matches) == 1 else None, kind)
 
 
 def domain_allowed(domain: str) -> bool:
@@ -341,6 +399,8 @@ class ToolExecutor:
         if DANGEROUS_SCHEMES.match(target):
             raise ToolError("that kind of address is not allowed")
         resolved = resolve_target(target)
+        if resolved["url"] is None:
+            raise ToolError(f"I do not know a site called {_clean(target, 40)!r}. Use web_search to find it")
         return await self._open(resolved["url"], session, browser, resolved["site_id"] or "the page")
 
     async def _web_search(self, args, session, browser) -> str:
