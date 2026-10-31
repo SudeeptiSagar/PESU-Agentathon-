@@ -64,6 +64,10 @@ SENSITIVE_VALUES: dict[str, str] = {
 }
 CONFIRM_INSTRUCTION = "Say confirm to go ahead, or say change followed by the field name."
 
+# Every Console wait is capped here. A real backend step takes a few seconds; the old
+# 60-90s waits only made a failure slow. 30s still leaves room for a cold browser start.
+E2E_WAIT = 30.0
+
 
 # --------------------------------------------------------------------------------------
 # Stub detection and blockers
@@ -189,12 +193,36 @@ def scenario_blockers(scenario: str) -> list[StubSpec]:
 def scenario_skip_reason(scenario: str) -> str | None:
     """A clear skip reason, or None when the scenario can run."""
     found = scenario_blockers(scenario)
-    if not found:
-        return None
-    if any(spec.key in _CORE_KEYS for spec in found):
-        return (f"blocked until CORE-11: {_describe(found)} still contain a 'STUB:' marker")
-    return (f"blocked by e2e dependencies: {_describe(found)} still contain a "
-            "'STUB:' marker")
+    if found:
+        if any(spec.key in _CORE_KEYS for spec in found):
+            return (f"blocked until CORE-11: {_describe(found)} still contain a 'STUB:' marker")
+        return (f"blocked by e2e dependencies: {_describe(found)} still contain a "
+                "'STUB:' marker")
+    if scenario.upper() == "B":
+        blocker = core12_blocker()
+        if blocker:
+            return (f"blocked until CORE-12 (verify/readback/confirm state machine): "
+                    f"{blocker}")
+    return None
+
+
+def core12_blocker() -> str | None:
+    """Report the CORE-12 gap in the verify/read-back/confirm state machine, else None.
+
+    CORE-12 replaces the placeholder confirmation with the form check, read-back and
+    confirm state machine. Until it lands, demo B cannot pass, so the test must skip
+    with this exact reason instead of treating the partial flow as a pass.
+    """
+    if is_stub("tools.commit_pending"):
+        return "tools.commit_pending (CORE-12) still contains a 'STUB:' marker"
+    agent = importlib.import_module("app.agent")
+    try:
+        source = inspect.getsource(agent.begin_confirmation)
+    except (OSError, TypeError) as exc:
+        return f"app.agent.begin_confirmation cannot be inspected ({type(exc).__name__})"
+    if "CORE-12" in source:
+        return "agent.begin_confirmation still says CORE-12 adds the form check"
+    return None
 
 
 def stub_skip_reason(*keys: str) -> str | None:
@@ -532,6 +560,24 @@ def _patch_aliases(module: Any, original: Callable[..., Any],
 
 
 @contextlib.contextmanager
+def deterministic_config() -> Iterator[None]:
+    """Force the settings that make an e2e run repeatable.
+
+    - ``BROWSER_HEADLESS=True`` keeps Playwright's Chromium off the desktop.
+    - ``GATE_BACKEND="rules"`` means no live Jev call can change a decision mid-run.
+
+    The app reads both from ``app.config`` at call time, so patching the module is enough
+    even when ``app.main`` or ``app.agent`` was imported earlier.
+    """
+    from app import config as app_config
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(_patch_attr(app_config, "BROWSER_HEADLESS", True))
+        stack.enter_context(_patch_attr(app_config, "GATE_BACKEND", "rules"))
+        yield
+
+
+@contextlib.contextmanager
 def fake_profile(profile: dict[str, str] | None = None) -> Iterator[None]:
     """Return the fictional profile for any PIN, without touching the real profile file."""
     values = dict(profile or PROFILE)
@@ -553,6 +599,21 @@ def fake_profile(profile: dict[str, str] | None = None) -> Iterator[None]:
             stack.enter_context(_patch_aliases(module, original_load, load_profile))
             stack.enter_context(_patch_aliases(module, original_exists, profile_exists))
         yield
+
+
+def seed_session_profile(profile: dict[str, str] | None = None) -> None:
+    """Put the fictional profile in the live hub, as onboarding does after the PIN.
+
+    UI-07 (the unlock step) is not part of these runs, so the harness seeds the session
+    directly. That is scripted setup, not a shortcut in the agent: every fill still goes
+    through the real executor and placeholder substitution.
+    """
+    from app.main import app as fastapi_app
+
+    hub = getattr(fastapi_app.state, "hub", None)
+    if hub is None:
+        raise RuntimeError("the app server has no hub yet; connect the Console first")
+    hub.ctx.session.profile = dict(profile or PROFILE)
 
 
 def tool(name: str, **args: Any) -> dict[str, Any]:
@@ -761,51 +822,57 @@ class AppServer:
 @contextlib.asynccontextmanager
 async def app_server() -> AsyncIterator[AppServer]:
     """Start uvicorn in this process on a free port, wait for /health, stop cleanly."""
-    from app.main import app as fastapi_app
+    with deterministic_config():
+        from app.main import app as fastapi_app
 
-    port = free_port()
-    config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="warning",
-                            lifespan="on")
-    server = uvicorn.Server(config)
-    server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
-    task = asyncio.create_task(server.serve(), name="e2e-uvicorn")
-    base_url = f"http://127.0.0.1:{port}"
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + 20
-    last_error: Exception | None = None
-    try:
-        async with httpx.AsyncClient(timeout=1.0) as http:
-            while True:
-                if task.done():
-                    error = task.exception()
-                    raise RuntimeError(f"uvicorn stopped before /health: {error!r}")
-                try:
-                    response = await http.get(f"{base_url}/health")
-                    if response.status_code == 200 and response.json().get("status") == "ok":
-                        break
-                except Exception as exc:  # noqa: BLE001 - startup race
-                    last_error = exc
-                if loop.time() > deadline:
-                    raise RuntimeError(
-                        f"timed out waiting for {base_url}/health; last error: {last_error!r}"
-                    )
-                await asyncio.sleep(0.05)
-        yield AppServer(base_url=base_url, ws_url=f"ws://127.0.0.1:{port}/ws/console")
-    finally:
-        server.should_exit = True
+        # app.main keeps one Hub on the FastAPI app for the process lifetime. A new
+        # server must start from a fresh Context, otherwise a CLI run of A then C sees
+        # A's DONE state. The previous app_server has already shut its Hub down.
+        fastapi_app.state.hub = None
+
+        port = free_port()
+        config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="warning",
+                                lifespan="on")
+        server = uvicorn.Server(config)
+        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
+        task = asyncio.create_task(server.serve(), name="e2e-uvicorn")
+        base_url = f"http://127.0.0.1:{port}"
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 20
+        last_error: Exception | None = None
         try:
-            await asyncio.wait_for(task, timeout=10)
-        except asyncio.TimeoutError:
-            server.force_exit = True
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        except asyncio.CancelledError:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        except Exception:  # noqa: BLE001 - shutdown noise must not hide the test result
-            pass
+            async with httpx.AsyncClient(timeout=1.0) as http:
+                while True:
+                    if task.done():
+                        error = task.exception()
+                        raise RuntimeError(f"uvicorn stopped before /health: {error!r}")
+                    try:
+                        response = await http.get(f"{base_url}/health")
+                        if response.status_code == 200 and response.json().get("status") == "ok":
+                            break
+                    except Exception as exc:  # noqa: BLE001 - startup race
+                        last_error = exc
+                    if loop.time() > deadline:
+                        raise RuntimeError(
+                            f"timed out waiting for {base_url}/health; last error: {last_error!r}"
+                        )
+                    await asyncio.sleep(0.05)
+            yield AppServer(base_url=base_url, ws_url=f"ws://127.0.0.1:{port}/ws/console")
+        finally:
+            server.should_exit = True
+            try:
+                await asyncio.wait_for(task, timeout=10)
+            except asyncio.TimeoutError:
+                server.force_exit = True
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            except asyncio.CancelledError:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            except Exception:  # noqa: BLE001 - shutdown noise must not hide the test result
+                pass
 
 
 @dataclasses.dataclass(frozen=True)
@@ -877,7 +944,7 @@ class ConsoleClient:
         return await self._send({"type": "key", "name": name})
 
     async def wait_for(self, predicate: Callable[[Event], bool], description: str,
-                       timeout: float = 30.0) -> Event:
+                       timeout: float = E2E_WAIT) -> Event:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while True:
@@ -898,7 +965,7 @@ class ConsoleClient:
             f"timed out after {timeout:.1f}s waiting for {description}{error}\n\n{self.dump()}"
         )
 
-    async def wait_for_state(self, name: str, timeout: float = 30.0) -> Event:
+    async def wait_for_state(self, name: str, timeout: float = E2E_WAIT) -> Event:
         return await self.wait_for(
             lambda event: event.direction == "in" and event.type == "state"
             and event.data.get("name") == name,
@@ -907,7 +974,7 @@ class ConsoleClient:
 
     async def expect_event(self, event_type: str,
                            predicate: Callable[[Event], bool] | None = None,
-                           timeout: float = 30.0) -> Event:
+                           timeout: float = E2E_WAIT) -> Event:
         """Wait for the next inbound event of ``event_type`` that matches predicate."""
         def matches(event: Event) -> bool:
             if event.direction != "in" or event.type != event_type:
@@ -917,7 +984,7 @@ class ConsoleClient:
         return await self.wait_for(matches, f"{event_type} event", timeout)
 
     async def wait_for_speak(self, substring: str | None = None,
-                             timeout: float = 30.0) -> Event:
+                             timeout: float = E2E_WAIT) -> Event:
         needle = substring.casefold() if substring else None
 
         def matches(event: Event) -> bool:
@@ -928,13 +995,13 @@ class ConsoleClient:
         description = f"speak containing {substring!r}" if substring else "speak event"
         return await self.wait_for(matches, description, timeout)
 
-    async def wait_for_pending(self, timeout: float = 30.0) -> Event:
+    async def wait_for_pending(self, timeout: float = E2E_WAIT) -> Event:
         return await self.wait_for(
             lambda event: event.direction == "in" and event.type == "pending",
             "pending event", timeout,
         )
 
-    async def wait_for_human_check(self, timeout: float = 60.0) -> Event:
+    async def wait_for_human_check(self, timeout: float = E2E_WAIT) -> Event:
         keywords = (
             "robot", "human check", "captcha", "say done",
             "when you are done", "complete the check", "payment", "hand over",
@@ -953,7 +1020,7 @@ class ConsoleClient:
 
         return await self.wait_for(matches, "human-check pause or hand-off", timeout)
 
-    async def wait_for_payment_handoff(self, timeout: float = 60.0,
+    async def wait_for_payment_handoff(self, timeout: float = E2E_WAIT,
                                        after_seq: int = 0) -> Event:
         keywords = ("payment", "hand over", "hand-off", "handoff", "card", "human")
 
@@ -969,7 +1036,7 @@ class ConsoleClient:
 
         return await self.wait_for(matches, "payment hand-off", timeout)
 
-    async def wait_for_ack(self, timeout: float = 60.0, after_seq: int = 0) -> Event:
+    async def wait_for_ack(self, timeout: float = E2E_WAIT, after_seq: int = 0) -> Event:
         def matches(event: Event) -> bool:
             if event.direction != "in" or event.type != "speak" or event.seq <= after_seq:
                 return False

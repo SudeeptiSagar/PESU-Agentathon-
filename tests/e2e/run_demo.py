@@ -4,8 +4,9 @@ Usage, from the repository root:
 
     python -m tests.e2e.run_demo
 
-Exit code 0 only when A, B and C all PASS. BLOCKED is used while a required module is
-still a CORE-01 stub; FAIL means the scenario ran and a safety or flow assertion failed.
+Exit code 0 only when A, B and C all PASS. BLOCKED is used while a required ticket is
+still missing (for example CORE-12 for demo B); FAIL means the scenario ran and a safety
+or flow assertion failed.
 """
 from __future__ import annotations
 
