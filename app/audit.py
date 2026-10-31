@@ -1,9 +1,12 @@
 """JSONL audit log with sensitive keys dropped (PRD FR-19). Owner: M4 (Abishek).
 
-One compact UTF-8 JSON object per line, appended to ``LOG_PATH`` outside the
-repo. Sensitive keys are dropped before serialisation and identifier-like
-values (Aadhaar, account and card numbers, IFSC) are masked to their last four
-characters, so a caller bug cannot leak them through this module.
+One compact UTF-8 JSON object per line, appended to ``LOG_PATH``: the
+``.audit`` directory inside the project folder, which is gitignored. Logs stay
+on the project drive instead of the encrypted-profile directory, and ``.audit/``
+in ``.gitignore`` keeps them out of commits. Sensitive keys are dropped before
+serialisation and identifier-like values (Aadhaar, account and card numbers,
+IFSC) are masked to their last four characters, so a caller bug cannot leak
+them through this module.
 """
 
 import json
@@ -169,14 +172,37 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
-def log_event(kind: str, **fields) -> None:
-    """Append one event to the audit log. Drops config.SENSITIVE_KEYS automatically."""
+def _free_field_name(base: str, taken: set[str]) -> str:
+    """``base``, or ``base_2``, ``base_3``, ... if that name is already taken."""
+    name, suffix = base, 2
+    while name in taken:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
+
+
+def log_event(kind: str, /, **fields) -> None:
+    """Append one event to the audit log. Drops config.SENSITIVE_KEYS automatically.
+
+    ``kind`` is the event type and is positional-only, so a caller may log a
+    field that is itself called ``kind`` (a control's kind, for example). The
+    event type keeps the ``kind`` key and the caller's value is stored under
+    ``field_kind`` (``field_kind_2``, ... if that name is taken too), so nothing
+    is dropped. A field named ``ts`` is ignored: the logger owns the timestamp.
+    """
     try:
         sensitive = _sensitive_names()
+        cleaned = _sanitize(fields, sensitive, 0)
         record: dict[str, Any] = {"ts": _utc_now(), "kind": _scrub_text(kind)}
-        for key, value in _sanitize(fields, sensitive, 0).items():
-            if key not in record:  # never let a field override ts or kind
-                record[key] = value
+        # Claim the caller's own field names first, so an explicit "field_kind"
+        # keeps its name no matter which order the fields were passed in.
+        taken = {key for key in cleaned if key not in ("ts", "kind")}
+        for key, value in cleaned.items():
+            if key == "ts":                 # never let a field override the timestamp
+                continue
+            name = key if key != "kind" else _free_field_name("field_kind", taken)
+            taken.add(name)
+            record[name] = value
         line = json.dumps(
             record, ensure_ascii=False, separators=(",", ":"), default=str
         ) + "\n"
