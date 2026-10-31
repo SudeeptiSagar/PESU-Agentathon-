@@ -24,7 +24,7 @@ $env:VITE_TTS_BACKEND = "browser"
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173/console.html**. Leave the Vite terminal running; press `Ctrl+C` there to stop it.
+Open **http://127.0.0.1:5173/console.dev.html**. Leave the Vite terminal running; press `Ctrl+C` there to stop it.
 
 The browser speech backend is the default. For Piper, set `$env:VITE_TTS_BACKEND = "piper"` before starting Vite or building, and also set `TTS_BACKEND=piper` in the repository root `.env`. This prevents browser speech from duplicating Piper playback.
 
@@ -34,7 +34,7 @@ Build the production frontend from `client`:
 npm run build
 ```
 
-This writes `client/dist/console.html` and its assets. `npm run preview` serves that bundle at **http://127.0.0.1:4173/console.html**, but the current Vite config only proxies WebSockets in development mode. The preview therefore does not connect to `/ws/console` yet. Stop Vite preview with `Ctrl+C`.
+This writes a self-contained production page to `client/console.html` for FastAPI's `/console` route, plus Vite preview assets under `client/dist/`. The Vite preview at **http://127.0.0.1:4173/console.dev.html** does not proxy WebSockets; use the development server for a proxied preview. For production integration, start FastAPI after the build and open **http://127.0.0.1:8080/console**. Stop Vite preview with `Ctrl+C`.
 
 ## C. Run the Python voice module and tests
 
@@ -110,9 +110,9 @@ The FastAPI app has `GET /health`, `GET /console`, and `WS /ws/console`. Start i
 python -m app.main
 ```
 
-The backend listens on `http://127.0.0.1:8080` by default. Check **http://127.0.0.1:8080/health**. The route smoke test is `python -m pytest -q tests/test_smoke.py`. To connect the Console, run its Vite **development server** and open **http://127.0.0.1:5173/console.html**; `client/vite.config.js` proxies the Console WebSocket to `ws://127.0.0.1:8080`.
+The backend listens on `http://127.0.0.1:8080` by default. Check **http://127.0.0.1:8080/health**. The route smoke test is `python -m pytest -q tests/test_smoke.py`. The production Console is served at **http://127.0.0.1:8080/console** and connects to `/ws/console` on the same origin. For frontend-only work, Vite's development URL is **http://127.0.0.1:5173/console.dev.html**; `client/vite.config.js` proxies its WebSocket to `ws://127.0.0.1:8080`.
 
-The WebSocket route currently calls the CORE-10/11 stub in `app/agent.py`, which echoes `You said: ...` and returns `Stopped.` for Escape. This verifies the route and event plumbing, but it is not the autonomous browser agent. Until UI-02 is merged, `/console` falls back to a placeholder. After UI-02 is merged, the route returns `client/console.html`, but FastAPI still does not serve the Vite JavaScript bundle or built assets. Use Vite development mode for the current Console. Production serving under `/console` still needs backend static-asset integration.
+The WebSocket route currently calls the CORE-10/11 stub in `app/agent.py`, which echoes `You said: ...` and returns `Stopped.` for Escape. This verifies the route and event plumbing, but it is not the autonomous browser agent. `npm run build` must be run before startup; FastAPI then serves the self-contained `client/console.html` at `/console`. The page receives Section 12 events over `/ws/console`; the real agent and command routing still depend on M1's CORE-10/11 integration.
 
 ## E. Handy input workflow
 
@@ -128,7 +128,7 @@ Handy installation and physical microphone/headset behavior have not been tested
 
 - Piper playback has only been exercised with mocked output streams; this host has neither `piper` nor `sounddevice` installed, and physical playback is unverified.
 - Handy is not installed on this host; microphone permissions, Handy model download, and headset capture/paste are unverified.
-- FastAPI and both Console routes exist. The dev WebSocket proxy is configured and the FastAPI smoke test covers echo/stop events, but the agent handler remains a stub. Vite preview has no WebSocket proxy, and FastAPI does not serve the production frontend assets.
+- The production page is self-contained and served by FastAPI at `/console`. The dev WebSocket proxy is configured and the FastAPI smoke test covers echo/stop events, but the agent handler remains a stub. Vite preview has no WebSocket proxy.
 - React Bits TargetCursor and CursorGrid are included as source components. Live Playwright click highlighting is not connected because no browser target/coordinate event is available to the Console.
 - The Console is a web page. An always-on-top desktop window and OS-level refocus helper are not implemented.
 - CORE-14's OS startup-shortcut script is not present in the current default branch. Start the backend and Vite manually for this build.

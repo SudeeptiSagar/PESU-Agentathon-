@@ -10,7 +10,7 @@ export default defineConfig({
   base: "./",
   plugins: [react()],
   server: {
-    open: "/console.html",
+    open: "/console.dev.html",
     proxy: {
       "/ws/console": {
         target: "ws://127.0.0.1:8080",
@@ -22,7 +22,7 @@ export default defineConfig({
     outDir: resolve(root, "dist"),
     emptyOutDir: true,
     rollupOptions: {
-      input: resolve(root, "console.html"),
+      input: { console: resolve(root, "console.dev.html") },
     },
   },
 });

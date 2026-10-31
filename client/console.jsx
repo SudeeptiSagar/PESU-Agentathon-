@@ -353,7 +353,10 @@ function AssistantOrb() {
         spellCheck={false}
         aria-label={inputMode === "typed_secret" ? "Sensitive entry" : "Task input"}
         aria-describedby="input-help"
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
+          setDraft(event.target.value);
+        }}
         onKeyDown={handleKeyDown}
         onBlur={() => window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0)}
       />

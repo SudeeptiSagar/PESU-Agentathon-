@@ -11,11 +11,11 @@ npm install
 npm run dev
 ```
 
-Vite serves `console.html` and proxies `/ws/console` to the FastAPI service at `http://127.0.0.1:8080`. `npm run build` creates a production page and sibling assets under `dist/`.
+Vite serves `console.dev.html` and proxies `/ws/console` to FastAPI at `http://127.0.0.1:8080`. Run `npm run build` to create a self-contained production page at `client/console.html`; the FastAPI `/console` route serves that page directly. The `dist/` directory remains Vite's asset-based preview output.
 
-The Console voices `speak` events with the browser's `speechSynthesis` by default. If the backend uses Piper, set `VITE_TTS_BACKEND=piper` in the environment used to run Vite or build the Console so browser audio does not duplicate Piper playback. Escape cancels current browser speech while requesting the agent to stop.
+The Console voices `speak` events with the browser's `speechSynthesis` by default. If the backend uses Piper, set `VITE_TTS_BACKEND=piper` in the environment used to run Vite or build the Console so browser audio does not duplicate Piper playback. New input and Escape cancel browser speech; Escape also sends the stop key.
 
-The current FastAPI `/console` route returns `client/console.html` directly, while this Vite source page still needs Vite to transform JSX and serve its dependencies. Serving the production bundle through `/console` requires the backend to serve `dist/console.html` and `dist/assets/` together.
+For production, build before starting FastAPI so `client/console.html` contains the latest frontend. The page connects to `/ws/console` on the same origin. The FastAPI route does not need to serve Vite's `dist/assets/` directory.
 
 ## React Bits
 
