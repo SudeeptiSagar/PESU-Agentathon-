@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apply: Disability Pension</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Disability Pension Application</h1>
+    <p>Department of Social Welfare (mock site for testing only)</p>
+  </header>
+  <main>
+    <form id="application" class="card" novalidate>
+      <div id="form-errors" role="alert" tabindex="-1" hidden>
+        <h2>There is a problem</h2>
+        <ul id="form-errors-list"></ul>
+      </div>
+
+      <div role="tablist" aria-label="Application sections">
+        <button type="button" role="tab" id="tab-personal" aria-controls="panel-personal" aria-selected="true">Personal Details</button>
+        <button type="button" role="tab" id="tab-bank" aria-controls="panel-bank" aria-selected="false" tabindex="-1">Bank Details</button>
+      </div>
+
+      <section role="tabpanel" id="panel-personal" aria-labelledby="tab-personal">
+        <div class="field">
+          <label for="full_name">Full name</label>
+          <input id="full_name" name="full_name" type="text" autocomplete="name" required aria-describedby="full_name-error">
+          <p class="error" id="full_name-error"></p>
+        </div>
+        <div class="field">
+          <label for="dob">Date of birth</label>
+          <input id="dob" name="dob" type="date" required aria-describedby="dob-error">
+          <p class="error" id="dob-error"></p>
+        </div>
+        <div class="field">
+          <label for="gender">Gender</label>
+          <select id="gender" name="gender" required aria-describedby="gender-error">
+            <option value="">Select gender</option>
+            <option value="Female">Female</option>
+            <option value="Male">Male</option>
+            <option value="Transgender">Transgender</option>
+          </select>
+          <p class="error" id="gender-error"></p>
+        </div>
+        <div class="field">
+          <label for="phone">Mobile number</label>
+          <input id="phone" name="phone" type="tel" inputmode="numeric" maxlength="10" required aria-describedby="phone-hint phone-error">
+          <p class="hint" id="phone-hint">10 digits, without +91</p>
+          <p class="error" id="phone-error"></p>
+        </div>
+        <div class="field">
+          <label for="email">Email address (optional)</label>
+          <input id="email" name="email" type="email" autocomplete="email" aria-describedby="email-error">
+          <p class="error" id="email-error"></p>
+        </div>
+        <div class="field">
+          <label for="address">Address</label>
+          <textarea id="address" name="address" rows="3" required aria-describedby="address-error"></textarea>
+          <p class="error" id="address-error"></p>
+        </div>
+        <div class="field">
+          <label for="city">City</label>
+          <input id="city" name="city" type="text" autocomplete="address-level2" required aria-describedby="city-error">
+          <p class="error" id="city-error"></p>
+        </div>
+        <div class="field">
+          <label for="state">State</label>
+          <input id="state" name="state" type="text" autocomplete="address-level1" required aria-describedby="state-error">
+          <p class="error" id="state-error"></p>
+        </div>
+        <div class="field">
+          <label for="pin_code">PIN code</label>
+          <input id="pin_code" name="pin_code" type="text" inputmode="numeric" maxlength="6" required aria-describedby="pin_code-hint pin_code-error">
+          <p class="hint" id="pin_code-hint">6 digits</p>
+          <p class="error" id="pin_code-error"></p>
+        </div>
+        <div class="field">
+          <label for="aadhaar">Aadhaar number</label>
+          <input id="aadhaar" name="aadhaar" type="text" inputmode="numeric" maxlength="14" autocomplete="off" required aria-describedby="aadhaar-hint aadhaar-error">
+          <p class="hint" id="aadhaar-hint">12 digits, shown in groups of four</p>
+          <p class="error" id="aadhaar-error"></p>
+        </div>
+        <div class="field">
+          <label for="annual_income">Annual family income (Rs)</label>
+          <input id="annual_income" name="annual_income" type="number" min="0" step="1" required aria-describedby="annual_income-error">
+          <p class="error" id="annual_income-error"></p>
+        </div>
+        <div class="field">
+          <label for="category">Category</label>
+          <select id="category" name="category" required aria-describedby="category-error">
+            <option value="">Select a category</option>
+            <option value="General">General</option>
+            <option value="OBC">OBC</option>
+            <option value="SC">SC</option>
+            <option value="ST">ST</option>
+          </select>
+          <p class="error" id="category-error"></p>
+        </div>
+        <div class="field">
+          <label for="disability_percent">Disability percentage</label>
+          <input id="disability_percent" name="disability_percent" type="number" min="0" max="100" step="1" required aria-describedby="disability_percent-error">
+          <p class="error" id="disability_percent-error"></p>
+        </div>
+        <button type="button" class="secondary" id="next-bank">Next: Bank Details</button>
+      </section>
+
+      <section role="tabpanel" id="panel-bank" aria-labelledby="tab-bank" hidden>
+        <div class="field">
+          <label for="bank_account">Bank account number</label>
+          <input id="bank_account" name="bank_account" type="text" inputmode="numeric" maxlength="18" autocomplete="off" required aria-describedby="bank_account-hint bank_account-error">
+          <p class="hint" id="bank_account-hint">9 to 18 digits</p>
+          <p class="error" id="bank_account-error"></p>
+        </div>
+        <div class="field">
+          <label for="ifsc">IFSC code</label>
+          <input id="ifsc" name="ifsc" type="text" maxlength="11" autocomplete="off" required aria-describedby="ifsc-hint ifsc-error">
+          <p class="hint" id="ifsc-hint">11 characters, for example SBIN0001234</p>
+          <p class="error" id="ifsc-error"></p>
+        </div>
+
+        <fieldset class="field" id="human-check" data-humancheck="captcha">
+          <legend>Verification</legend>
+          <div class="robot-check fake-captcha">
+            <input id="not_robot" name="not_robot" type="checkbox" required aria-describedby="not_robot-error">
+            <label for="not_robot">I'm not a robot <small>Fake check, local only (mock CAPTCHA)</small></label>
+          </div>
+          <p class="error" id="not_robot-error"></p>
+        </fieldset>
+
+        <button type="button" class="secondary" id="back-personal">Back: Personal Details</button>
+        <button type="submit" id="submit-application">Submit application</button>
+      </section>
+    </form>
+  </main>
+  <script src="apply.js"></script>
+</body>
+</html>

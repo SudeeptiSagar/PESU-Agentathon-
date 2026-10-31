@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Accessible Store - Checkout</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="shop.html">Accessible Store</a>
+    <nav aria-label="Shop">
+      <a href="shop.html">Products</a>
+      <a href="cart.html" id="cart-count">Cart (0)</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Checkout</h1>
+    <p>Order total: <strong id="order-total"></strong></p>
+    <p id="empty" hidden>Your cart is empty. <a href="shop.html">Browse products</a></p>
+    <form id="checkout" novalidate>
+      <fieldset id="delivery">
+        <legend>Delivery address</legend>
+        <div class="field">
+          <label for="full_name">Full name</label>
+          <input id="full_name" name="full_name" type="text" autocomplete="name" required aria-describedby="full_name-error">
+          <p class="error" id="full_name-error"></p>
+        </div>
+        <div class="field">
+          <label for="phone">Mobile number</label>
+          <input id="phone" name="phone" type="tel" inputmode="numeric" maxlength="10" required aria-describedby="phone-error">
+          <p class="error" id="phone-error"></p>
+        </div>
+        <div class="field">
+          <label for="address">Address</label>
+          <textarea id="address" name="address" rows="2" required aria-describedby="address-error"></textarea>
+          <p class="error" id="address-error"></p>
+        </div>
+        <div class="field">
+          <label for="city">City</label>
+          <input id="city" name="city" type="text" required aria-describedby="city-error">
+          <p class="error" id="city-error"></p>
+        </div>
+        <div class="field">
+          <label for="pin_code">PIN code</label>
+          <input id="pin_code" name="pin_code" type="text" inputmode="numeric" maxlength="6" required aria-describedby="pin_code-error">
+          <p class="error" id="pin_code-error"></p>
+        </div>
+      </fieldset>
+
+      <!-- Human-only step (PRD Section 10): the agent hands card details over to the user. -->
+      <fieldset id="payment" data-humancheck="payment">
+        <legend>Payment (card)</legend>
+        <p class="muted">Mock payment form. Use any 16 digits; nothing is charged.</p>
+        <div class="field">
+          <label for="card_number">Card number</label>
+          <input id="card_number" name="card_number" type="text" inputmode="numeric" autocomplete="cc-number" maxlength="19" required aria-describedby="card_number-error">
+          <p class="error" id="card_number-error"></p>
+        </div>
+        <div class="field">
+          <label for="card_name">Name on card</label>
+          <input id="card_name" name="card_name" type="text" autocomplete="cc-name" required aria-describedby="card_name-error">
+          <p class="error" id="card_name-error"></p>
+        </div>
+        <div class="field">
+          <label for="card_expiry">Expiry (MM/YY)</label>
+          <input id="card_expiry" name="card_expiry" type="text" autocomplete="cc-exp" maxlength="5" placeholder="MM/YY" required aria-describedby="card_expiry-error">
+          <p class="error" id="card_expiry-error"></p>
+        </div>
+        <div class="field">
+          <label for="card_cvv">CVV</label>
+          <input id="card_cvv" name="card_cvv" type="password" inputmode="numeric" autocomplete="cc-csc" maxlength="4" required aria-describedby="card_cvv-error">
+          <p class="error" id="card_cvv-error"></p>
+        </div>
+      </fieldset>
+
+      <button type="submit" id="place-order">Place order</button>
+    </form>
+  </main>
+  <script src="cart.js"></script>
+  <script>
+    (function () {
+      showCartCount();
+      document.getElementById("order-total").textContent = rupees(Cart.total());
+      var form = document.getElementById("checkout");
+      if (!Cart.count()) {
+        form.hidden = true;
+        document.getElementById("empty").hidden = false;
+        return;
+      }
+      function v(id) { return document.getElementById(id).value.trim(); }
+      var rules = {
+        full_name: function () { return v("full_name").length >= 2 ? "" : "Enter your name."; },
+        phone: function () { return /^[6-9]\d{9}$/.test(v("phone")) ? "" : "Enter a 10-digit mobile number."; },
+        address: function () { return v("address").length >= 5 ? "" : "Enter your address."; },
+        city: function () { return v("city").length >= 2 ? "" : "Enter your city."; },
+        pin_code: function () { return /^[1-9]\d{5}$/.test(v("pin_code")) ? "" : "Enter a 6-digit PIN code."; },
+        card_number: function () { return /^\d{16}$/.test(v("card_number").replace(/\s/g, "")) ? "" : "Enter a 16-digit card number."; },
+        card_name: function () { return v("card_name").length >= 2 ? "" : "Enter the name on the card."; },
+        card_expiry: function () { return /^(0[1-9]|1[0-2])\/\d{2}$/.test(v("card_expiry")) ? "" : "Enter the expiry as MM/YY."; },
+        card_cvv: function () { return /^\d{3,4}$/.test(v("card_cvv")) ? "" : "Enter the 3 or 4 digit CVV."; },
+      };
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var first = null;
+        Object.keys(rules).forEach(function (id) {
+          var msg = rules[id]();
+          document.getElementById(id).setAttribute("aria-invalid", msg ? "true" : "false");
+          document.getElementById(id + "-error").textContent = msg;
+          if (msg && !first) first = id;
+        });
+        if (first) { document.getElementById(first).focus(); return; }
+        var total = Cart.total();
+        Cart.clear();
+        var order = "AS-" + String(Math.floor(100000 + Math.random() * 900000));
+        // No card or address data travels to the next page.
+        location.href = "order.html?order=" + order + "&total=" + total;
+      });
+    })();
+  </script>
+</body>
+</html>

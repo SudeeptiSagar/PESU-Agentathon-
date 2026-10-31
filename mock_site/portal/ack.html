@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Application submitted: Disability Pension</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Application submitted</h1>
+    <p>Department of Social Welfare (mock site for testing only)</p>
+  </header>
+  <main>
+    <section class="card" role="status" aria-labelledby="ack-heading">
+      <h2 id="ack-heading">Thank you<span id="ack-name"></span></h2>
+      <p>Your disability pension application has been received.</p>
+      <p>Your acknowledgment number is</p>
+      <p class="ack-number" id="ack-number">Not available</p>
+      <p>Keep this number to track your application.</p>
+      <p><a href="index.html">Back to the portal home page</a></p>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var ack = params.get("ack");
+      var name = params.get("name");
+      if (ack) document.getElementById("ack-number").textContent = ack;
+      if (name) document.getElementById("ack-name").textContent = ", " + name;
+    })();
+  </script>
+</body>
+</html>

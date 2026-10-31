@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kalpana Chawla - The Open Encyclopedia</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="article.html">The Open Encyclopedia</a>
+    <nav aria-label="Site">
+      <a href="search.html">Search</a>
+      <a href="#">Random article</a>
+      <a href="#">Donate</a>
+      <a href="#">Log in</a>
+    </nav>
+  </header>
+  <main>
+    <div class="layout">
+      <article>
+        <h1>Kalpana Chawla</h1>
+        <p class="muted">From The Open Encyclopedia (mock copy for offline testing)</p>
+        <table class="infobox" aria-label="Quick facts">
+          <tr><th>Born</th><td>17 March 1962, Karnal, Punjab (now Haryana), India</td></tr>
+          <tr><th>Died</th><td>1 February 2003, over Texas, United States</td></tr>
+          <tr><th>Occupation</th><td>Astronaut, aerospace engineer</td></tr>
+          <tr><th>Missions</th><td>STS-87, STS-107</td></tr>
+        </table>
+        <p><strong>Kalpana Chawla</strong> was an Indian-born American astronaut and aerospace engineer.
+          She was the first woman of Indian origin to go to space.</p>
+
+        <h2 id="early-life">Early life and education</h2>
+        <p>Kalpana Chawla was born on 17 March 1962 in Karnal, a town in what was then the state of Punjab
+          and is now Haryana, India. She studied at Tagore Bal Niketan school in Karnal and earned a
+          bachelor's degree in aeronautical engineering from Punjab Engineering College in Chandigarh in 1982.</p>
+        <p>She moved to the United States, earned a master's degree in aerospace engineering from the
+          University of Texas at Arlington in 1984, and a doctorate in aerospace engineering from the
+          University of Colorado Boulder in 1988.</p>
+
+        <h2 id="career">NASA career</h2>
+        <p>Chawla began working at NASA's Ames Research Center in 1988 and became a United States citizen
+          in 1991. She was selected as an astronaut in 1994. Her first flight was on Space Shuttle Columbia
+          as part of mission STS-87 in 1997, where she was a mission specialist and the primary robotic arm operator.</p>
+
+        <h2 id="death">Death</h2>
+        <p>Chawla died on 1 February 2003, along with the six other crew members, when Space Shuttle Columbia
+          broke apart during re-entry at the end of mission STS-107.</p>
+
+        <h2 id="legacy">Legacy</h2>
+        <p>Schools, scholarships, a hostel at Punjab Engineering College and a medical college in Karnal are
+          named after her. India's weather satellite MetSat-1 was renamed Kalpana-1 in her honour.</p>
+      </article>
+      <aside class="sidebar" aria-label="Related">
+        <h2>Related articles</h2>
+        <ul>
+          <li><a href="#">Sunita Williams</a></li>
+          <li><a href="#">Rakesh Sharma</a></li>
+          <li><a href="#">Space Shuttle Columbia disaster</a></li>
+        </ul>
+        <h2>Tools</h2>
+        <ul>
+          <li><a href="#">Print this page</a></li>
+          <li><a href="#">Cite this page</a></li>
+        </ul>
+      </aside>
+    </div>
+  </main>
+  <footer class="site">
+    Text is available under a mock licence. <a href="#">Privacy policy</a> &middot; <a href="#">About</a> &middot; <a href="#">Contact</a>
+  </footer>
+  <div class="cookie" id="cookie" role="region" aria-label="Cookie notice">
+    This site uses cookies to remember your preferences.
+    <button type="button" id="cookie-ok">OK</button>
+  </div>
+  <script>
+    document.getElementById("cookie-ok").addEventListener("click", function () {
+      document.getElementById("cookie").hidden = true;
+    });
+  </script>
+</body>
+</html>

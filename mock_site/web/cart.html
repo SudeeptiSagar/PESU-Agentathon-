@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Accessible Store - Your cart</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="shop.html">Accessible Store</a>
+    <nav aria-label="Shop">
+      <a href="shop.html">Products</a>
+      <a href="cart.html" id="cart-count">Cart (0)</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Your cart</h1>
+    <p id="empty" hidden>Your cart is empty. <a href="shop.html">Browse products</a></p>
+    <table class="cart" id="cart-table" hidden>
+      <thead><tr><th scope="col">Item</th><th scope="col">Quantity</th><th scope="col">Price</th><th scope="col"><span class="muted">Action</span></th></tr></thead>
+      <tbody id="cart-rows"></tbody>
+      <tfoot><tr><th scope="row" colspan="2">Total</th><td id="cart-total"></td><td></td></tr></tfoot>
+    </table>
+    <p><a class="button" id="checkout-link" href="checkout.html" hidden>Proceed to checkout</a></p>
+  </main>
+  <script src="cart.js"></script>
+  <script>
+    (function () {
+      function draw() {
+        var lines = Cart.lines();
+        var rows = document.getElementById("cart-rows");
+        rows.innerHTML = "";
+        lines.forEach(function (l) {
+          var tr = document.createElement("tr");
+          tr.innerHTML = "<td></td><td></td><td></td><td></td>";
+          tr.children[0].textContent = l.product.name;
+          tr.children[1].textContent = l.qty;
+          tr.children[2].textContent = rupees(l.total);
+          var rm = document.createElement("button");
+          rm.type = "button";
+          rm.className = "secondary";
+          rm.id = "remove-" + l.product.id;
+          rm.textContent = "Remove";
+          rm.setAttribute("aria-label", "Remove " + l.product.name + " from cart");
+          rm.addEventListener("click", function () { Cart.remove(l.product.id); draw(); });
+          tr.children[3].appendChild(rm);
+          rows.appendChild(tr);
+        });
+        document.getElementById("cart-total").textContent = rupees(Cart.total());
+        document.getElementById("empty").hidden = lines.length > 0;
+        document.getElementById("cart-table").hidden = lines.length === 0;
+        document.getElementById("checkout-link").hidden = lines.length === 0;
+        showCartCount();
+      }
+      draw();
+    })();
+  </script>
+</body>
+</html>
