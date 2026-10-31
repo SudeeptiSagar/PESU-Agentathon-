@@ -21,10 +21,15 @@ class Session:
     goal: str | None = None
     plan: list[str] = field(default_factory=list)
     progress: list[str] = field(default_factory=list)
-    profile: dict = field(default_factory=dict)
+    # profile and expected hold real values: repr=False so printing or logging a Session
+    # (or a failing assert showing one) can never reveal them (hard rule 4).
+    profile: dict = field(default_factory=dict, repr=False)
     approved_domains: set[str] = field(default_factory=set)
     locators: dict = field(default_factory=dict)
-    expected: dict = field(default_factory=dict)
+    expected: dict = field(default_factory=dict, repr=False)
+    # id -> {"kind","label",...} for the elements of the last snapshot, filled by
+    # tools.record_snapshot. The executor uses it to know which controls are irreversible.
+    elements: dict = field(default_factory=dict)
     pending_action: dict | None = None
     confirmed: bool = False
     failures: int = 0

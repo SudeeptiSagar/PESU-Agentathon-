@@ -357,6 +357,7 @@ async def llm(messages: list[dict], tools: list[dict] | None = None) -> dict
 class Session:
     state: str; goal: str | None; plan: list[str]; progress: list[str]
     profile: dict; approved_domains: set[str]; locators: dict; expected: dict
+    elements: dict   # id -> {kind,label,irreversible,...} of the last snapshot (tools.record_snapshot)
     pending_action: dict | None; confirmed: bool; failures: int
     history: list; saved_state: str | None
 # states: IDLE, PLANNING, ACTING, VERIFYING, READBACK, AWAITING_CONFIRM, COMMITTING,
@@ -385,10 +386,18 @@ TOOL_SCHEMAS: list[dict]
 #  ask_user(question)  speak(text)  finish(summary)
 #  -- NO submit or commit tool
 class ToolExecutor:
+    def __init__(self, announce=None)   # announce(domain) is called once per new domain
     async def run(self, action: dict, session: Session, browser) -> str   # short result, no raw sensitive values
+#  The first word of a result is its status: ok | error | blocked | needs_approval | needs_human | held |
+#  ask_user | speak | finish   (tools.parse_result). held = an irreversible control was stored as
+#  session.pending_action and NOT pressed. needs_approval = ask the user, then tools.approve_domain(), retry.
+#  The agent loop must call tools.take_snapshot (snapshot + record_snapshot) every step: the executor
+#  refuses ids that are not in the last snapshot, and clears them after any click or navigation.
+#  press_key accepts only Enter, Tab, Shift+Tab, Escape, arrows, PageUp/Down, Home, End, Space; Enter and
+#  Space are refused when they would submit a form or press an irreversible control.
 def resolve_target(target: str) -> dict                     # {"url","domain","site_id"|None,"trusted"}
 def domain_allowed(domain: str) -> bool
-async def commit_pending(session: Session, browser) -> str  # state machine only, needs confirmed=True
+async def commit_pending(session: Session, browser) -> str  # state machine only: needs state COMMITTING, confirmed, pending_action; presses the stored selector once
 
 # agent.py (M1)
 async def handle_utterance(text: str, ctx) -> None          # entry point from main.py
