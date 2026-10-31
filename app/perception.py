@@ -18,14 +18,31 @@ MAX_FRAMES = 5
 FRAME_SEP = " >>> "
 PREFIXES = ("f", "b", "l", "t")
 
-# Irreversible controls (hard rule 2). BRW-08 extends this with target hints and full tests.
+# Irreversible controls (hard rule 2, BRW-08). Checked in this order, so "Submit payment" is pay.
+# Visible text decides first; target hints (id, name, class, data-action, form action, href)
+# decide when the text says nothing; then any non-search form submit counts as submit.
 IRREVERSIBLE_KINDS = [
-    ("pay", re.compile(r"\b(pay|payment|checkout now|buy|purchase|place (your )?order|confirm order|order now)\b", re.I)),
-    ("send", re.compile(r"\bsend\b", re.I)),
-    ("post", re.compile(r"\b(post|publish|tweet|share now)\b", re.I)),
-    ("delete", re.compile(r"\b(delete|remove account|discard|trash|erase)\b", re.I)),
-    ("accept", re.compile(r"\b(accept|agree|i agree|consent)\b", re.I)),
-    ("submit", re.compile(r"\b(submit|apply now|finish|confirm|sign up|register)\b", re.I)),
+    ("pay", re.compile(r"\b(pay|(make|submit|complete) payment|buy|purchase|place (your |my )?order|confirm (your )?order|order now|"
+                       r"complete (your )?(order|purchase)|book now|donate|recharge|transfer money)\b"
+                       r"|भुगतान|खरीद", re.I)),
+    ("delete", re.compile(r"\b(delete|trash|discard|erase|remove (my )?account|close (my )?account|deactivate|"
+                          r"unsubscribe|cancel (my |your |the )?(order|booking|subscription|application))\b"
+                          r"|हटाएं|मिटाएं", re.I)),
+    ("send", re.compile(r"\b(send|send (message|email|mail|now))\b|भेजें", re.I)),
+    ("post", re.compile(r"\b(post|publish|tweet|post comment|share now)\b", re.I)),
+    ("accept", re.compile(r"\b(accept|i agree|agree|consent)\b|स्वीकार", re.I)),
+    ("submit", re.compile(r"\b(submit|apply|apply now|confirm|finish|complete|register|sign up|enrol|enroll|"
+                          r"file (return|complaint)|lodge)\b|जमा करें", re.I)),
+]
+LINK_ACTION_KINDS = {"pay", "delete", "send", "post"}
+# Same idea for machine names: "place-order", "send_btn", "/cart/checkout/pay", "data-action=delete".
+HINT_KINDS = [
+    ("pay", re.compile(r"(^|[^a-z])(pay|payment|buy|purchase|place[-_ ]?order|confirm[-_ ]?order|checkout[-_/]?(submit|pay|confirm))([^a-z]|$)", re.I)),
+    ("delete", re.compile(r"(^|[^a-z])(delete|destroy|trash|remove[-_ ]?account|deactivate|unsubscribe)([^a-z]|$)", re.I)),
+    ("send", re.compile(r"(^|[^a-z])(send|send[-_ ]?(mail|email|message))([^a-z]|$)", re.I)),
+    ("post", re.compile(r"(^|[^a-z])(post[-_ ]?(comment|status|tweet)|publish)([^a-z]|$)", re.I)),
+    ("accept", re.compile(r"(^|[^a-z])(accept|agree)[-_ ]?(terms|tos|conditions)?([^a-z]|$)", re.I)),
+    ("submit", re.compile(r"(^|[^a-z])submit([^a-z]|$)", re.I)),
 ]
 
 # Runs in each frame. Collects visible interactive elements, tags them, returns raw entries.
@@ -76,7 +93,16 @@ SNAPSHOT_JS = r"""
 
   const fieldSel = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=image]):not([type=reset]),' +
     'textarea,select,[contenteditable=""],[contenteditable=true],[role=textbox],[role=combobox],[role=checkbox],[role=radio],[role=switch]';
-  const buttonSel = 'button,input[type=submit],input[type=button],input[type=image],input[type=reset],[role=button],summary';
+  const buttonSel = 'button,input[type=submit],input[type=button],input[type=image],input[type=reset],[role=button],[role=menuitem],summary';
+  // Target hints for the irreversible check (BRW-08).
+  const hintsOf = (el, form) => [el.id, el.getAttribute('name'), el.getAttribute('class'), el.getAttribute('data-action'),
+    el.getAttribute('formaction'), el.getAttribute('href'), form && form.getAttribute('action'), form && form.id]
+    .filter(Boolean).join(' ');
+  const isSearchForm = form => !!form && (form.getAttribute('role') === 'search' || !!form.closest('[role=search]') ||
+    !!form.querySelector('input[type=search]') || /search/i.test(form.getAttribute('action') || '') ||
+    Array.from(form.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button])'))
+      .every(i => /^(q|query|search|s|keyword|k)$/i.test(i.name || '')) && !!form.querySelector('input[name]'));
+  const inCookieBanner = el => !!el.closest('[id*=cookie i],[class*=cookie i],[id*=consent i],[class*=consent i],[aria-label*=cookie i]');
   const out = {fields: [], buttons: [], tabs: [], links: []};
   const seen = new Set();
   const take = (list, sel, make) => {
@@ -113,14 +139,17 @@ SNAPSHOT_JS = r"""
   take(out.buttons, buttonSel, el => {
     if (el.getAttribute('role') === 'tab') return null;
     const form = el.form || el.closest('form');
-    const type = (el.getAttribute('type') || (el.tagName === 'BUTTON' && form ? 'submit' : 'button')).toLowerCase();
-    return {id: nextId('b'), text: controlText(el), type,
-            form_method: form ? (form.getAttribute('method') || 'get').toLowerCase() : null};
+    let type = (el.getAttribute('type') || (el.tagName === 'BUTTON' && form ? 'submit' : 'button')).toLowerCase();
+    if (type === 'image') type = 'submit';   // <input type=image> submits its form
+    return {id: nextId('b'), text: controlText(el) || clean(el.getAttribute('alt')), type,
+            form_method: form ? (form.getAttribute('method') || 'get').toLowerCase() : null,
+            hints: hintsOf(el, form), search_form: isSearchForm(form), cookie_banner: inCookieBanner(el)};
   });
   take(out.tabs, '[role=tab]', el => ({id: nextId('t'), text: controlText(el), selected: el.getAttribute('aria-selected') === 'true'}));
   take(out.links, 'a[href]', el => {
     const text = controlText(el);
-    return text ? {id: nextId('l'), text, href: el.getAttribute('href') || '', new_tab: el.target === '_blank'} : null;
+    return text ? {id: nextId('l'), text, href: el.getAttribute('href') || '', new_tab: el.target === '_blank',
+                   hints: hintsOf(el, null), cookie_banner: inCookieBanner(el)} : null;
   });
 
   // h1 first (the page's main heading), then the rest in document order.
@@ -188,13 +217,27 @@ SENSITIVE_RE = (r"aadha+r|\buid\b|bank.?acc|account.?(no|num)|acc(ount)?.?number
                 r"\bpin\b(?!.?code)")
 
 
-def classify_button(text: str, btn_type: str = "button", form_method: str | None = None) -> tuple[bool, str]:
-    """Return (irreversible, kind) for a button. kind is submit|pay|send|post|delete|accept|other."""
+def classify_button(text: str, btn_type: str = "button", form_method: str | None = None,
+                    hints: str = "", search_form: bool = False, cookie_banner: bool = False) -> tuple[bool, str]:
+    """Return (irreversible, kind) for a button. kind is submit|pay|send|post|delete|accept|other.
+
+    text: visible text or accessible name. btn_type: "submit" for form submits. form_method: the
+    owning form's method, None outside a form. hints: id, name, class, data-action, form action and
+    href joined. search_form: the form is a search box. cookie_banner: the control sits in a cookie
+    or consent banner (accepting cookies is not treated as irreversible).
+    """
     for kind, pattern in IRREVERSIBLE_KINDS:
         if pattern.search(text or ""):
+            if kind == "accept" and cookie_banner:
+                return False, "other"
             return True, kind
-    if btn_type == "submit" and form_method == "post":
-        return True, "submit"   # a POST form submit changes server state whatever its label
+    for kind, pattern in HINT_KINDS:
+        if pattern.search(hints or ""):
+            if kind == "accept" and cookie_banner:
+                return False, "other"
+            return True, kind
+    if btn_type == "submit" and form_method is not None and not search_form:
+        return True, "submit"   # submitting a form sends data, whatever the button says
     return False, "other"
 
 
@@ -296,11 +339,21 @@ async def snapshot(page, session) -> dict:
                "error": _cut(f["error"], 120) if f["error"] else None, "sensitive_hint": f["sensitive_hint"],
                **({"options": [_cut(o) for o in f["options"]]} if "options" in f else {})}
               for f in result["fields"]]
-    buttons = []
+    buttons, links = [], []
     for b in result["buttons"]:
-        irreversible, kind = classify_button(b["text"], b["type"], b["form_method"])
+        irreversible, kind = classify_button(b["text"], b["type"], b["form_method"], b["hints"],
+                                             b["search_form"], b["cookie_banner"])
         buttons.append({"id": b["id"], "text": _cut(b["text"]), "irreversible": irreversible, "kind": kind})
-    links = [{"id": l["id"], "text": _cut(l["text"])} for l in result["links"]]
+    for link in result["links"]:
+        # A link that performs an irreversible action ("Place order", href=/mail/delete) is reported
+        # as a button, so the executor holds it like any other irreversible control.
+        irreversible, kind = classify_button(link["text"], "link", None, link["hints"],
+                                             cookie_banner=link["cookie_banner"])
+        # "Apply for ..." or "I agree" as a link is navigation; only action verbs promote a link.
+        if irreversible and kind in LINK_ACTION_KINDS:
+            buttons.append({"id": link["id"], "text": _cut(link["text"]), "irreversible": True, "kind": kind})
+        else:
+            links.append({"id": link["id"], "text": _cut(link["text"])})
     tabs = [{"id": t["id"], "text": _cut(t["text"]), "selected": t["selected"]} for t in result["tabs"]]
     errors = list(dict.fromkeys(_cut(e, 200) for e in errors))
     headings = [_cut(h, 100) for h in dict.fromkeys(headings)]
