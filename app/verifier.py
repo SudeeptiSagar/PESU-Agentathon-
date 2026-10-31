@@ -1,8 +1,10 @@
 """DOM verifier: expected vs actual page values (PRD Section 10). Owner: M4 (Abishek).
 
 Reads the values that are actually on the page, normalises them by field type and
-reports what is wrong. The returned records always carry masked values for sensitive
-fields (hard rule 4), and `verify` never raises on a missing element or a broken page.
+reports what is wrong. `verify` returns only problems, always with masked values for
+sensitive fields (hard rule 4), and never raises on a missing element or a broken
+page. `read_values` returns the same raw page values for CORE-12's read-back, which
+masks them through `readback.build_readback`.
 """
 from __future__ import annotations
 
@@ -321,6 +323,41 @@ def _is_agent_selector(selector: str) -> bool:
     be preferred over a stable selector like #dob recorded in session.expected.
     """
     return "data-agent-id" in selector
+
+
+def _expected_entry(raw_expected: Any) -> dict:
+    """Normalise a session.expected entry, which may be a bare value, to a dict."""
+    if isinstance(raw_expected, dict):
+        return raw_expected
+    return {"value": raw_expected}
+
+
+def _field_selectors(raw_id: Any, field_id: str, expected: dict,
+                     locators: dict) -> list[str]:
+    """Selectors to try for one field, in preference order.
+
+    A stable recorded selector wins. An ephemeral [data-agent-id] locator is
+    invalidated by the next snapshot, so the live locator comes first in that case.
+    """
+    recorded = expected.get("selector") or ""
+    if isinstance(recorded, dict):
+        recorded = recorded.get("selector") or recorded.get("value") or ""
+    recorded = _text(recorded).strip()
+    live = locators.get(raw_id) or locators.get(field_id) or ""
+    live = _text(live).strip()
+
+    selectors: list[str] = []
+    if recorded and not _is_agent_selector(recorded):
+        selectors.append(recorded)
+    if live:
+        selectors.append(live)
+    if recorded:
+        selectors.append(recorded)
+    unique: list[str] = []
+    for selector in selectors:
+        if selector and selector not in unique:
+            unique.append(selector)
+    return unique
 
 
 def _error_text(meta: dict, actual: str) -> str:
@@ -793,6 +830,22 @@ async def _read_actual(loc, meta: dict) -> tuple[str, list[str]]:
 
 # ------------------------------------------------------------------------- scan parts
 
+async def _locate_first(page, selectors: Iterable[str]) -> tuple[Any, int]:
+    """The first selector that matches something, with its match count.
+
+    Never raises: a bad selector or a broken page is a zero match.
+    """
+    for selector in selectors:
+        try:
+            candidate = _locator(page, selector)
+            count = await candidate.count()
+        except Exception:
+            count = 0
+        if count:
+            return candidate, count
+    return None, 0
+
+
 async def _check_expected(page, session, add, reported_ids: set[str]) -> None:
     expected_all = getattr(session, "expected", None)
     locators = getattr(session, "locators", None)
@@ -803,47 +856,15 @@ async def _check_expected(page, session, add, reported_ids: set[str]) -> None:
 
     for raw_id, raw_expected in expected_all.items():
         field_id = _text(raw_id)
-        if isinstance(raw_expected, dict):
-            expected = raw_expected
-        else:
-            expected = {"value": raw_expected}
+        expected = _expected_entry(raw_expected)
         expected_value = _text(expected.get("value"))
-        recorded = expected.get("selector") or ""
-        if isinstance(recorded, dict):
-            recorded = recorded.get("selector") or recorded.get("value") or ""
-        recorded = _text(recorded).strip()
-        live = locators.get(raw_id) or locators.get(field_id) or ""
-        live = _text(live).strip()
-
-        # Prefer a stable recorded selector. An ephemeral [data-agent-id] locator is
-        # invalidated by the next snapshot, so use the live locator first in that case.
-        candidates: list[str] = []
-        if recorded and not _is_agent_selector(recorded):
-            candidates.append(recorded)
-        if live:
-            candidates.append(live)
-        if recorded:
-            candidates.append(recorded)
-        unique: list[str] = []
-        for candidate in candidates:
-            if candidate and candidate not in unique:
-                unique.append(candidate)
 
         label = _collapse(expected.get("label")) or field_id
         sensitive = _is_sensitive(expected, label)
 
-        loc = None
-        count = 0
-        for candidate in unique:
-            try:
-                candidate_loc = _locator(page, candidate)
-                candidate_count = await candidate_loc.count()
-            except Exception:
-                candidate_count = 0
-            if candidate_count:
-                loc = candidate_loc
-                count = candidate_count
-                break
+        loc, count = await _locate_first(
+            page, _field_selectors(raw_id, field_id, expected, locators)
+        )
         if not count or loc is None:
             add(field_id, label, expected_value, "", "missing", sensitive)
             continue
@@ -1066,3 +1087,43 @@ async def verify(page, session) -> list[dict]:
         # A broken or half-loaded page must never take the agent loop down.
         pass
     return problems
+
+
+async def read_values(page, session) -> dict[str, str]:
+    """Raw page value for every expected field, keyed by field id (CORE-12 read-back).
+
+    The values are NOT masked: CORE-12 passes this dict to
+    readback.build_readback, which masks Aadhaar, bank account, IFSC and the
+    unlock PIN (hard rule 4). `pin_code` is a postal code and stays raw.
+
+    A field whose selector is missing, matches nothing or fails to read maps to
+    "" so every expected field is present. This never raises.
+    """
+    values: dict[str, str] = {}
+    expected_all = getattr(session, "expected", None)
+    locators = getattr(session, "locators", None)
+    if not isinstance(expected_all, dict):
+        return values
+    if not isinstance(locators, dict):
+        locators = {}
+
+    for raw_id, raw_expected in expected_all.items():
+        field_id = _text(raw_id)
+        values[field_id] = ""
+        try:
+            expected = _expected_entry(raw_expected)
+            loc, count = await _locate_first(
+                page, _field_selectors(raw_id, field_id, expected, locators)
+            )
+            if not count or loc is None:
+                continue
+            loc = loc.first
+            meta = await loc.evaluate(_META_JS)
+            if not isinstance(meta, dict):
+                meta = {}
+            actual, _candidates = await _read_actual(loc, meta)
+            values[field_id] = _text(actual)
+        except Exception:
+            # A broken page, locator or selector is an empty value, never a crash.
+            values[field_id] = ""
+    return values

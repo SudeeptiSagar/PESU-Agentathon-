@@ -1,11 +1,13 @@
 """JEV-02: the DOM verifier against real Chromium pages (no network)."""
+import hashlib
 import json
 
 import pytest
 from playwright.async_api import async_playwright
 
+from app import readback
 from app.session import Session
-from app.verifier import verify
+from app.verifier import read_values, verify
 
 
 @pytest.fixture
@@ -348,3 +350,81 @@ async def test_missing_element_returns_a_missing_record_not_an_exception(page):
         "actual": "",
         "kind": "missing",
     }]
+
+
+# --------------------------------------------------------------- read_values (CORE-12)
+
+def _digest(value) -> str:
+    """A comparison that cannot echo a sensitive value in an assertion failure."""
+    return hashlib.sha256(str(value).encode()).hexdigest()
+
+
+async def test_read_values_returns_each_raw_field_and_blank_for_a_missing_one(page):
+    await page.set_content(
+        '<input id="full_name" type="text" value="Ramesh Kumar">'
+        '<input id="city" type="text" value="Bengaluru">'
+    )
+
+    values = await read_values(page, session_for(
+        {
+            "f1": {"label": "Full name", "selector": "#full_name", "value": "Ramesh Kumar",
+                   "type": "text", "source": "profile:full_name"},
+            "f2": {"label": "State", "selector": "#state", "value": "Karnataka",
+                   "type": "text", "source": "profile:state"},
+            "f3": {"label": "City", "selector": "#city", "value": "Bengaluru",
+                   "type": "text", "source": "profile:city"},
+            # No recorded selector: the live locator from session.locators is used.
+            "f4": {"label": "City again", "value": "Bengaluru", "type": "text",
+                   "source": "profile:city"},
+            # A stable recorded selector wins over a stale [data-agent-id] locator.
+            "f5": {"label": "City once more", "selector": "#city", "value": "Bengaluru",
+                   "type": "text", "source": "profile:city"},
+        },
+        {"f4": "#city", "f5": '[data-agent-id="stale"]'},
+    ))
+
+    assert list(values) == ["f1", "f2", "f3", "f4", "f5"]   # session.expected order
+    assert values == {
+        "f1": "Ramesh Kumar",
+        "f2": "",                    # selector does not exist on the page
+        "f3": "Bengaluru",
+        "f4": "Bengaluru",
+        "f5": "Bengaluru",
+    }
+
+
+async def test_read_values_survives_malformed_selectors_and_maps(page):
+    await page.set_content("<p>No form here.</p>")
+    session = session_for({
+        "none": {"label": "None selector", "selector": None, "value": "x"},
+        "number": {"label": "Numeric selector", "selector": 12345, "value": "x"},
+        "dict": {"label": "Dict selector", "selector": {"selector": None}, "value": "x"},
+        "bare": "a bare value",
+    })
+    session.locators = None                       # not a dict
+
+    assert await read_values(page, session) == {
+        "none": "", "number": "", "dict": "", "bare": "",
+    }
+
+    session.expected = None                       # no expected fields at all
+    assert await read_values(page, session) == {}
+
+
+async def test_read_values_returns_raw_aadhaar_and_readback_masks_it(page):
+    # Built from parts so no assertion failure can echo the full number.
+    aadhaar = "1234" + "5678" + "9012"
+    grouped = " ".join(aadhaar[i:i + 4] for i in range(0, len(aadhaar), 4))
+    await page.set_content(f'<input id="aadhaar" type="text" value="{grouped}">')
+    session = session_for({
+        "f5": {"label": "Aadhaar number", "selector": "#aadhaar", "value": aadhaar,
+               "type": "text", "source": "profile:aadhaar"},
+    })
+
+    values = await read_values(page, session)
+
+    # Raw, never masked here: CORE-12 masks through build_readback.
+    assert _digest(values["f5"]) == _digest(grouped)
+    spoken = " ".join(readback.build_readback(session, values))
+    assert "ending 9 0 1 2" in spoken
+    assert _digest(spoken) != _digest(values["f5"])

@@ -211,3 +211,21 @@ async def test_real_portal_full_form_reports_only_the_planted_pin_trap(page, bas
     await page.fill("#pin_code", "560001")
     await page.wait_for_timeout(400)
     assert await verifier.verify(page, session) == []
+
+
+@pytest.mark.asyncio
+async def test_read_values_returns_the_real_truncated_pin_code(page, base):
+    session, fields = await _open_portal(page, base)
+    pin = fields["PIN code"]
+    await perception.locate(page, session, pin["id"]).fill("560001")
+    # The mock portal drops the last digit 150 ms after the sixth digit arrives.
+    await page.wait_for_timeout(400)
+
+    session.expected = {
+        pin["id"]: {"label": "PIN code", "selector": STABLE["PIN code"],
+                    "value": "560001", "type": "text", "source": "profile:pin_code"},
+    }
+
+    values = await verifier.read_values(page, session)
+
+    assert values == {pin["id"]: "56000"}
