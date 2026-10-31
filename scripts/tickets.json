@@ -1,0 +1,552 @@
+[
+  {
+    "id": "CORE-01",
+    "title": "[CORE-01] Repo skeleton with contract stubs",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP1 Foundation",
+    "priority": "P0",
+    "depends_on": "none",
+    "acceptance": "Folder layout from PRD Section 7; every module in Section 12 exists with the exact signatures and stub bodies returning fixed, realistic values; `main.py` serves `/health`, `/console` (placeholder page) and `/ws/console` (echoes utterances as `speak`); `requirements.txt`, `.env.example` (every variable in Section 7), `tests/test_smoke.py` committed; a teammate can clone, install and run it"
+  },
+  {
+    "id": "CORE-02",
+    "title": "[CORE-02] llm.py against Ollama",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP1 Foundation",
+    "priority": "P0",
+    "depends_on": "CORE-01",
+    "acceptance": "Returns text or a validated tool call; temperature 0; `num_ctx` from config; malformed tool output retried once; works from every team machine"
+  },
+  {
+    "id": "CORE-03",
+    "title": "[CORE-03] LLM reliability test for autonomy",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0",
+      "decision"
+    ],
+    "milestone": "CP2 Decision gate",
+    "priority": "P0",
+    "depends_on": "CORE-02",
+    "acceptance": "10 runs each of a `fill_field` call on a sample form and a `click` choice on a sample search-results snapshot; pass counts reported at CP2 (target 9/10 each); model choice recorded"
+  },
+  {
+    "id": "CORE-04",
+    "title": "[CORE-04] config.py",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP1 Foundation",
+    "priority": "P0",
+    "depends_on": "CORE-01",
+    "acceptance": "All env vars from Section 7 with defaults; gate thresholds; blocked domains; sensitive keys"
+  },
+  {
+    "id": "CORE-05",
+    "title": "[CORE-05] Reference repo study",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P1",
+      "decision"
+    ],
+    "milestone": "CP2 Decision gate",
+    "priority": "P1",
+    "depends_on": "none",
+    "acceptance": "`docs/REFERENCE_NOTES.md`, about 10 lines: structure, how the agent starts, browser connection, prompt and page-state ideas to borrow"
+  },
+  {
+    "id": "CORE-06",
+    "title": "[CORE-06] session.py state machine",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "CORE-01",
+    "acceptance": "Allowed-transitions table; illegal transition raises; unit test proves COMMITTING is unreachable without `confirmed=True` and a `pending_action`; PAUSED and NEEDS_HUMAN_CHECK save and restore state"
+  },
+  {
+    "id": "CORE-07",
+    "title": "[CORE-07] profile.py encrypted profile",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "CORE-01",
+    "acceptance": "Fernet with a PBKDF2 key from the PIN and a random salt; sensitive fields encrypted; wrong PIN raises `WrongPinError`; file outside the repo; unit tests"
+  },
+  {
+    "id": "CORE-08",
+    "title": "[CORE-08] tools.py schemas, executor and domain policy",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "CORE-06, CORE-07",
+    "acceptance": "All tools from Section 12; placeholder substitution; `domain_allowed` blocks `BLOCKED_DOMAINS`; profile values typed only on approved or trusted domains; expected values recorded with type; irreversible elements stored as `pending_action`, never clicked; result strings contain no raw sensitive values; no submit or commit tool; unit tests with a stub page"
+  },
+  {
+    "id": "CORE-09",
+    "title": "[CORE-09] Site and intent resolution",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "BRW-05",
+    "acceptance": "`resolve_target` maps aliases from `sites.json`, plain URLs and domains; otherwise the agent uses `web_search`; the destination domain is announced; tests for 5 phrasings"
+  },
+  {
+    "id": "CORE-10",
+    "title": "[CORE-10] Autonomous agent loop",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP4 First end to end",
+    "priority": "P0",
+    "depends_on": "CORE-08, BRW-03",
+    "acceptance": "Step cap from config; snapshot and history trimmed to fit the context; page content labelled untrusted; one-phrase narration per step and a `step` event; failure counter with retry or alternative and `ask_user` after 2 failures; gate called before risky actions; human-check pause and resume; `stop` halts within one step; typed requests complete demo tasks A and B"
+  },
+  {
+    "id": "CORE-11",
+    "title": "[CORE-11] main.py integration",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP4 First end to end",
+    "priority": "P0",
+    "depends_on": "CORE-10, UI-02",
+    "acceptance": "WebSocket routing; command matcher before the agent; every event in Section 12 sent to the Console; refocus after actions; one command starts the full system"
+  },
+  {
+    "id": "CORE-12",
+    "title": "[CORE-12] Irreversible-action confirmation flow",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "CP4 First end to end",
+    "priority": "P0",
+    "depends_on": "CORE-08, JEV-02, JEV-03",
+    "acceptance": "A held action triggers verify (for forms), read-back or `describe_pending`, a `pending` event and AWAITING_CONFIRM; \"confirm\" runs `commit_pending`; \"no\" or \"change <field>\" returns to ACTING; unit test proves nothing irreversible runs without \"confirm\""
+  },
+  {
+    "id": "CORE-13",
+    "title": "[CORE-13] Final integration and freeze",
+    "assignee": "pruthviprashanth",
+    "owner": "Prashanth (M1)",
+    "labels": [
+      "role:core",
+      "P0"
+    ],
+    "milestone": "Freeze and demo",
+    "priority": "P0",
+    "depends_on": "all P0",
+    "acceptance": "Demo tasks A and B pass twice in a row by voice on the demo machine; `demo-v1` tagged"
+  },
+  {
+    "id": "UI-01",
+    "title": "[UI-01] Handy setup on every demo machine",
+    "assignee": "VishalAprameya4",
+    "owner": "Vishal (M2)",
+    "labels": [
+      "role:ui",
+      "P0"
+    ],
+    "milestone": "CP1 Foundation",
+    "priority": "P0",
+    "depends_on": "none",
+    "acceptance": "Installed, models downloaded, hold-to-talk shortcut, permissions, paste settings tested; wired headset works; steps written in `SETUP.md`"
+  },
+  {
+    "id": "UI-02",
+    "title": "[UI-02] Voice Console page",
+    "assignee": "VishalAprameya4",
+    "owner": "Vishal (M2)",
+    "labels": [
+      "role:ui",
+      "P0"
+    ],
+    "milestone": "CP2 Decision gate",
+    "priority": "P0",
+    "depends_on": "CORE-01",
+    "acceptance": "Always-focused text box; 900 ms debounce or Enter sends `utterance`; shows status, live step log, transcript, masked field table, pending action and alerts from the Section 12 events; reconnects if the socket drops"
+  },
+  {
+    "id": "UI-03",
+    "title": "[UI-03] Console accessibility",
+    "assignee": "VishalAprameya4",
+    "owner": "Vishal (M2)",
+    "labels": [
+      "role:ui",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "UI-02",
+    "acceptance": "Keyboard-only operation; Escape = stop; ARIA live region for agent messages; large text; high contrast; focus never leaves the text box; checked with VoiceOver or NVDA"
+  },
+  {
+    "id": "UI-04",
+    "title": "[UI-04] Handy decision gate",
+    "assignee": "VishalAprameya4",
+    "owner": "Vishal (M2)",
+    "labels": [
+      "role:ui",
+      "P0",
+      "decision"
+    ],
+    "milestone": "CP2 Decision gate",
+    "priority": "P0",
+    "depends_on": "UI-01, UI-02, BRW-02",
+    "acceptance": "10-utterance test plus focus test across 5 actions; result (pass or fail) posted at 20:30"
+  },
+  {
+    "id": "UI-05",
+    "title": "[UI-05] Fallback STT (only if UI-04 fails)",
+    "assignee": "VishalAprameya4",
+    "owner": "Vishal (M2)",
+    "labels": [
+      "role:ui",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "UI-04",
+    "acceptance": "`WhisperSTT` with faster-whisper and silero-vad behind `STT`; switched with `STT_BACKEND=whisper`; 9/10 test passes"
+  },
+  {
+    "id": "UI-06",
+    "title": "[UI-06] voice.py output and commands",
+    "assignee": "VishalAprameya4",
+    "owner": "Vishal (M2)",
+    "labels": [
+      "role:ui",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "CORE-01",
+    "acceptance": "`PiperTTS` with `interrupt()`; `BrowserTTS` fallback; `match_command` covers every command in Section 12; `spoken_digits`; `words_to_digits`; unit tests for the text functions"
+  },
+  {
+    "id": "UI-07",
+    "title": "[UI-07] Onboarding and PIN unlock",
+    "assignee": "VishalAprameya4",
+    "owner": "Vishal (M2)",
+    "labels": [
+      "role:ui",
+      "P0"
+    ],
+    "milestone": "CP4 First end to end",
+    "priority": "P0",
+    "depends_on": "CORE-07, UI-06",
+    "acceptance": "Questions spoken one at a time; each answer read back and confirmed; sensitive values typed and hidden on screen; PIN set and confirmed; unlock works after restart; wrong PIN handled clearly"
+  },
+  {
+    "id": "UI-08",
+    "title": "[UI-08] Voice polish",
+    "assignee": "VishalAprameya4",
+    "owner": "Vishal (M2)",
+    "labels": [
+      "role:ui",
+      "P1"
+    ],
+    "milestone": "Freeze and demo",
+    "priority": "P1",
+    "depends_on": "CORE-11",
+    "acceptance": "Barge-in works; \"stop\" and \"pause\" work mid-task; \"where am I\" and \"what can I say\" answered; narration stays short; friendly error messages; five consecutive clean voice runs"
+  },
+  {
+    "id": "BRW-01",
+    "title": "[BRW-01] Mock portal",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P0"
+    ],
+    "milestone": "CP1 Foundation",
+    "priority": "P0",
+    "depends_on": "none",
+    "acceptance": "`mock_site/portal/`: landing page with Apply link; form with tabs \"Personal Details\" and \"Bank Details\"; fields from Section 11; labels and `aria-invalid` errors; validation messages; help link opening a new tab; fake \"I'm not a robot\" step; **PIN code field silently drops its last digit**; Submit shows an acknowledgment number; a human can complete it"
+  },
+  {
+    "id": "BRW-02",
+    "title": "[BRW-02] browser.py controller and focus test",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P0"
+    ],
+    "milestone": "CP2 Decision gate",
+    "priority": "P0",
+    "depends_on": "none (start standalone, fit to the CORE-01 stub once merged)",
+    "acceptance": "Headed Playwright with agent and Console windows; follows and announces new tabs; `switch_tab`, `close_tab`, `go_back`, `refocus_console`; `scripts/focus_test.py` reports Console focus across 5 clicks for UI-04"
+  },
+  {
+    "id": "BRW-03",
+    "title": "[BRW-03] perception.py snapshot and main text",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "BRW-02",
+    "acceptance": "Ids and locators per contract; label fallbacks (aria-label, placeholder, nearby text, name/id); errors; one-paragraph summary; `main_text` returns readable article text without menus; iframe handling; size caps; correct JSON for every mock page and for one real Wikipedia article"
+  },
+  {
+    "id": "BRW-04",
+    "title": "[BRW-04] humancheck.py",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "BRW-01",
+    "acceptance": "Detects the fake check, OTP fields, password fields and the mock checkout payment page; silent on normal pages; reports when the challenge is gone"
+  },
+  {
+    "id": "BRW-05",
+    "title": "[BRW-05] sites.json directory",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "BRW-01",
+    "acceptance": "Entries for the mock portal, mock shop, mock search and 4 real sites (Wikipedia, a news site, a gov.in page, DuckDuckGo) with aliases, domain and trusted flag"
+  },
+  {
+    "id": "BRW-06",
+    "title": "[BRW-06] Real-site tests",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P1"
+    ],
+    "milestone": "CP5 Full loop",
+    "priority": "P1",
+    "depends_on": "BRW-03",
+    "acceptance": "Snapshot and `main_text` on 3 real sites and the real search page; whether Playwright is blocked; findings and fallbacks in `docs/REAL_SITE_NOTES.md`"
+  },
+  {
+    "id": "BRW-07",
+    "title": "[BRW-07] CDP attach to the user's Chrome",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P2"
+    ],
+    "milestone": "Freeze and demo",
+    "priority": "P2",
+    "depends_on": "BRW-02",
+    "acceptance": "Optional mode connects to a running Chrome; documented"
+  },
+  {
+    "id": "BRW-08",
+    "title": "[BRW-08] Irreversible-control flagging",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "BRW-03",
+    "acceptance": "Every button and submit input gets `irreversible` and `kind` from text, form submit type and target hints (submit, pay, buy, place order, send, post, delete, accept); unit tests across all mock pages with no missed irreversible control"
+  },
+  {
+    "id": "BRW-09",
+    "title": "[BRW-09] Mock open-web pages",
+    "assignee": "SudeeptiSagar",
+    "owner": "Sudeepti (M3)",
+    "labels": [
+      "role:browser",
+      "P1"
+    ],
+    "milestone": "CP4 First end to end",
+    "priority": "P1",
+    "depends_on": "BRW-01",
+    "acceptance": "`mock_site/web/`: search results page reading `?q=`, an article page, a shop with product list, cart and checkout (payment form for the hand-off); work with `SEARCH_URL` pointed at the mock search"
+  },
+  {
+    "id": "JEV-01",
+    "title": "[JEV-01] Jev and jevals research",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P0",
+      "decision"
+    ],
+    "milestone": "CP1 Foundation",
+    "priority": "P0",
+    "depends_on": "none",
+    "acceptance": "`docs/JEV_NOTES.md`: access method, cost, real API, example call; backend decision (jev, llm or rules) posted by 19:00"
+  },
+  {
+    "id": "JEV-02",
+    "title": "[JEV-02] verifier.py",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "CORE-01",
+    "acceptance": "Reads real values (inputs, dropdown text, checkboxes); type-aware normalisation (dates, phone with +91, Aadhaar grouping, case, spaces); unit tests catch the truncated PIN code and a missing required field"
+  },
+  {
+    "id": "JEV-03",
+    "title": "[JEV-03] readback.py and pending description",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "CORE-01",
+    "acceptance": "Read-back chunks from actual values; digits separated; sensitive values masked to the last four; ends with the confirm or change instruction; `describe_pending` names the action, the site and any total shown; unit tests"
+  },
+  {
+    "id": "JEV-04",
+    "title": "[JEV-04] gate.py rules layer",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P0"
+    ],
+    "milestone": "CP3 Modules",
+    "priority": "P0",
+    "depends_on": "CORE-04",
+    "acceptance": "Risk classes from the Section 10 autonomy policy; block navigation to blocked domains; block profile fills on unapproved domains; first sensitive fill per domain returns `ask_user`; irreversible elements never return `proceed`; unit tests"
+  },
+  {
+    "id": "JEV-05",
+    "title": "[JEV-05] gate.py Jev layer",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P0"
+    ],
+    "milestone": "CP5 Full loop",
+    "priority": "P0",
+    "depends_on": "JEV-01, JEV-04",
+    "acceptance": "Semantic checks (action serves the user's goal; right element or field for the value); thresholds from config; `ask_user` for a mid-confidence test case; an injected instruction on a page is not followed; switchable backend"
+  },
+  {
+    "id": "JEV-06",
+    "title": "[JEV-06] audit.py",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P1"
+    ],
+    "milestone": "CP4 First end to end",
+    "priority": "P1",
+    "depends_on": "CORE-01",
+    "acceptance": "JSONL log; sensitive keys dropped automatically; test proves no raw values are written"
+  },
+  {
+    "id": "JEV-07",
+    "title": "[JEV-07] End-to-end tests",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P0"
+    ],
+    "milestone": "CP5 Full loop",
+    "priority": "P0",
+    "depends_on": "CORE-11",
+    "acceptance": "Scripted typed runs of demo tasks A (mock search), B and C; planted trap caught; human check paused and resumed; nothing irreversible runs without \"confirm\"; pass or fail printed"
+  },
+  {
+    "id": "JEV-08",
+    "title": "[JEV-08] Demo script and deck",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P0"
+    ],
+    "milestone": "Freeze and demo",
+    "priority": "P0",
+    "depends_on": "none",
+    "acceptance": "`docs/DEMO.md` with the 3-minute script from Section 17; deck with problem, architecture, autonomy policy, safety layers, competition and roadmap"
+  },
+  {
+    "id": "JEV-09",
+    "title": "[JEV-09] Rehearsals and backup video",
+    "assignee": "abishekraom",
+    "owner": "Abishek (M4)",
+    "labels": [
+      "role:jev-demo",
+      "P0"
+    ],
+    "milestone": "Freeze and demo",
+    "priority": "P0",
+    "depends_on": "CORE-13",
+    "acceptance": "Two full rehearsals on the demo machine and venue network; backup video of a clean run saved"
+  }
+]

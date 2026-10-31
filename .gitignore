@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets and personal data (never commit)
+.env
+profile.json
+.voiceagent/
+
+# Runtime output
+logs/
+*.log
+*.jsonl
+
+# Models and large files
+models/
+*.onnx
+*.onnx.json
+*.gguf
+*.bin
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+node_modules/
