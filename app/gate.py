@@ -6,7 +6,8 @@ Two layers:
 
 1. Deterministic rules. These are the guarantees: tool allowlist, domain policy,
    placeholders for profile values, approval rules for sensitive fields, and the
-   irreversible-control rule (never ``proceed``).
+   irreversible-control rule (a control perception flags irreversible never
+   ``proceed``s).
 2. An optional semantic check (Jev or the local LLM). It only runs when the rules
    allow the action, so it can make an action safer but can never loosen a rule.
 
@@ -59,8 +60,10 @@ _TARGETED_ACTIONS = frozenset({"click", "type_text", "fill_field", "select_optio
 _FORBIDDEN_ACTIONS = frozenset({"submit", "commit", "pay", "place_order", "send", "delete"})
 
 _IRREVERSIBLE_KINDS = frozenset({"submit", "pay", "buy", "send", "post", "delete", "accept"})
-# "apply" and "confirm" are deliberately absent: apply forms and confirm dialogs are
-# judged by the perception layer's own flag, and their text alone must not trip this.
+# Kind and text are a fallback for elements that arrive without perception's explicit
+# `irreversible` flag; when the flag is present it decides on its own. "apply" and
+# "confirm" are deliberately absent: apply forms and confirm dialogs are judged by that
+# flag, and their text alone must not trip this.
 _IRREVERSIBLE_TEXT = re.compile(
     r"\b(?:pay(?:ment)?s?|buy|delete|send|post)\b"
     r"|\bplace\b[^.!?]{0,30}\border\b",
@@ -276,10 +279,19 @@ def _sensitive_fill_on_domain(domain: str, context: dict) -> bool:
 
 
 def _element_is_irreversible(element: Any) -> bool:
+    """Whether a control must be held for confirmation (PRD Section 10, hard rule 2).
+
+    Perception owns this verdict: ``classify_button`` always returns an explicit
+    ``irreversible`` flag for every button and link, so when the element carries that
+    key it is final and neither kind nor text is consulted. The kind and text
+    fallbacks only cover elements that arrive without the key, where guessing is the
+    only option. Trusting an explicit False is safe: the executor holds the truly
+    irreversible controls before they reach the gate.
+    """
     if not isinstance(element, dict):
         return False
-    if element.get("irreversible"):
-        return True
+    if "irreversible" in element:
+        return bool(element["irreversible"])
     kind = str(element.get("kind") or "").strip().lower()
     if kind in _IRREVERSIBLE_KINDS:
         return True
