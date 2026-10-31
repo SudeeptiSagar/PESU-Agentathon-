@@ -46,5 +46,5 @@ if (
   throw new Error("Console bundle still depends on an external script or stylesheet");
 }
 
-await writeFile(outputHtml, html, "utf8");
+await writeFile(outputHtml, html.replace(/\r\n/g, "\n"), "utf8");
 console.log(`Wrote self-contained FastAPI Console: ${outputHtml} (script inlined, stylesheet ${inlinedStyle ? "inlined" : "not emitted"})`);
