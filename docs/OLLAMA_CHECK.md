@@ -6,16 +6,16 @@ It takes about 5 minutes. Nothing here uses profile data or secrets.
 ## Run
 
 ```bash
-git clone https://github.com/SudeeptiSagar/PESU-Agentathon-.git && cd PESU-Agentathon-
-git checkout core/CORE-02-llm          # until PR #45 is merged
+git clone https://github.com/SudeeptiSagar/PESU-Agentathon-.git
+cd PESU-Agentathon-                    # (PowerShell: run each command on its own line, no &&)
 python -m venv .venv
 source .venv/bin/activate              # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 ollama pull qwen3:8b                 # skip if already installed; Ollama must be running
-cp .env.example .env                   # defaults: OLLAMA_URL=http://localhost:11434/v1, LLM_MODEL=qwen3:8b
+cp .env.example .env                   # PowerShell: copy .env.example .env. Defaults: OLLAMA_URL=http://localhost:11434/v1, LLM_MODEL=qwen3:8b
 python scripts/check_llm.py
-pytest -q                              # should print 38 passed
+pytest -q                              # should print all tests passed (81 on 31 Oct)
 ```
 
 If Ollama runs on another machine, set `OLLAMA_URL=http://<that-machine>:11434/v1` in `.env`.
@@ -51,7 +51,8 @@ search result among ads, look-alikes and a page that tries to inject an instruct
 only.
 
 ```bash
-git checkout main && git pull origin main      # the script is on main once its PR is merged
+git checkout main                              # PowerShell: run each command on its own line, no &&
+git pull origin main
 source .venv/bin/activate                      # Windows PowerShell: .venv\Scripts\Activate.ps1
 python scripts/reliability_test.py
 ```
