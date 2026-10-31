@@ -326,6 +326,6 @@ These are open dependencies, not excuses. They are listed so the rehearsal does 
 | Read-back length unconfirmed | A full 15-field read-back will not fit 70 s; the script reads the risk fields first and cuts Task C unless CORE-12 adds a compact mode | M1, M4 | Before R1 |
 | UI-03 accessibility check not done | Q&A answer 7 must say "designed for, not yet audited" | M2 | Before the demo |
 | Venue network not tested | Task A may have to run on the mock mirror | M3, M4 | R2 |
-| Task D (Gmail) not tested | It is a stretch and is not claimed | M3, M4 | Only if claimed |
+| Task D (logged-in Chrome / Gmail) not proven | Do not claim it; only the mock inbox is tested offline | M3, M4 | Only after BRW-07 proof |
 | Piper not proven on the demo machine | Browser speech fallback may be the live path | M2 | Before R1 |
 | Jev backend not selected | Q&A must state the live `GATE_BACKEND` | M4 | Before R1 |

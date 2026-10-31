@@ -150,7 +150,7 @@ Presenter, exact, over the end of line 3:
 
 Presenter, exact:
 
-> "Three things to take away. One: autonomy with verification. The agent acts, the verifier reads the real page, and Ramesh confirms anything irreversible. Two: local and private. Speech in, speech out and the model run on our own hardware, and the profile is encrypted and never sent to the model. Three: stop works at any moment, in code. Next: a hosted phone version, more languages, and your own Chrome. A browser a blind user can trust with the whole task."
+> "Three things to take away. One: autonomy with verification. The agent acts, the verifier reads the real page, and Ramesh confirms anything irreversible. Two: local and private. Speech in, speech out and the model run on our own hardware, and the profile is encrypted and never sent to the model. Three: stop works at any moment, in code. Next: a hosted phone version, more languages, and more logged-in sites. A browser a blind user can trust with the whole task."
 
 - Expected agent lines: none. The agent is idle after Task B or holding the Task C pending action.
 - Console: `DONE` after Task B, or `AWAITING_CONFIRM` after Task C. Leaving the pending action visible during the Close is good: it shows the agent waiting, not acting.
@@ -221,6 +221,10 @@ Run this on the demo machine, in this order. Times are relative to going on stag
 | 19 | `MAX_STEPS`, `MAX_FAILURES` | `30`, `2` | The loop must stop, not spin |
 | 20 | `BLOCKED_DOMAINS` | The intended list for the demo | An empty list is a policy gap, not a feature |
 | 21 | `PROFILE_PATH` | The prepared demo profile, default `~/.voiceagent/profile.json` | Fresh profile or a known-good one, never created live |
+| 21a | `BROWSER_MODE` | `chromium` for the offline run; `chrome` only after the BRW-07 proof passes | PRD 3.2 makes logged-in Chrome the main mode, but it is not claimed until the proof |
+| 21b | `CHROME_PATH` | Empty (auto-detect) or the installed Chrome | Wrong path fails before the first task |
+| 21c | `CHROME_DEBUG_PORT` | `9222`, bound to `127.0.0.1` | The debug port is full browser control; never expose it |
+| 21d | `AGENT_PROFILE_DIR` | Outside the repo, never committed | It holds live sign-ins; treat it as a secret |
 
 ### T-15: voice, profile and safety
 
@@ -409,7 +413,7 @@ Evidence line: "Read, act, trust: the third one is the product."
 - Jev is a semantic layer, not the guarantee; it is live-tested, with rules as the fail-safe
 - No payments, no passwords, no CAPTCHA bypass, no real government submission
 - Timings and pass rates will come from rehearsal; none are claimed today
-- Task D, reading Gmail in the user's own Chrome, is a stretch and is not claimed unless it runs
+- Task D, reading Gmail in the logged-in Chrome profile, is not claimed unless the BRW-07 proof and a clean Gmail read run on the demo machine
 
 Evidence line: "Everything on this slide is a boundary we chose, not a bug we hid."
 
@@ -417,7 +421,7 @@ Evidence line: "Everything on this slide is a boundary we chose, not a bug we hi
 
 - Hosted phone version, so no laptop is needed
 - Multilingual voice, starting with Hindi and Kannada
-- The user's own Chrome over CDP, read-only first
+- More logged-in sites on the persistent Chrome profile, read-only first
 - More sites and services through the site directory
 - User testing with blind and low-vision participants
 - Stronger semantic gate as hosted evaluator access improves
@@ -448,7 +452,8 @@ Source: [PRD.md](PRD.md), Section 19.
 | "It is production ready." | "It is a 24-hour prototype with a deliberately narrow, tested demo path." |
 | "We rehearsed and the timings are measured." | "Rehearsals are blocked on CORE-13. The timings in this script are budgets." |
 | "The app is fully accessibility audited." | "The Console is designed for keyboard and screen-reader use. The audit is UI-03 and only counts when it is done." |
-| "It reads your Gmail." | Say nothing about Task D unless BRW-07 has actually run on the demo machine. It is a stretch. |
+| "It uses your logged-in Chrome." | "`BROWSER_MODE=chrome` is the PRD 3.2 mode, but we only claim it after the BRW-07 proof; today the tested mode is on the Console." |
+| "It reads your Gmail." | Say nothing about Task D unless the BRW-07 proof and a clean Gmail read have actually run on the demo machine. Login is human-only. |
 | "Our agent never makes a mistake." | "The agent can make mistakes; the design catches them before anything irreversible, and the user confirms." |
 | "100% pass rate" or any unmeasured number | "Here is the measured result from rehearsal" or "we have not measured that yet." |
 
@@ -469,7 +474,7 @@ Also:
 | Measured timings | **None.** All timings here are budgets taken from PRD Section 17 |
 | Measured latency | **None.** Do not quote a number in Q&A |
 | Voice pass rate | **None.** UI-04's gate result is not in this document |
-| Task D / Gmail | **Not claimed.** Stretch, BRW-07 |
+| Task D / logged-in Gmail | **Not claimed** until the BRW-07 proof passes; offline mock-inbox tests only |
 
 CORE-13 is "Final integration and freeze": demo tasks A and B pass twice in a row by voice on the demo machine, and `demo-v1` is tagged. Until that lands, this script cannot be rehearsed end to end and the backup video cannot be recorded from a known-good build.
 
