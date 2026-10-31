@@ -23,15 +23,15 @@ const REDACTED_INPUT = "Sensitive entry sent";
 const BROWSER_TTS_ENABLED =
   String(import.meta.env.VITE_TTS_BACKEND || "browser").toLowerCase() === "browser";
 const COLORS = {
-  ready: { preset: "frost", color: "#9bbcff" },
-  listening: { preset: "aurora", color: "#65f4d8" },
-  thinking: { preset: "nebula", color: "#9a83ff" },
+  ready: { preset: "frost", color: "#38bdf8" },       // Blue while idle
+  listening: { preset: "ember", color: "#f97316" },   // Orange while listening
+  thinking: { preset: "aurora", color: "#22c55e" },   // Green while thinking
   acting: { preset: "aurora", color: "#38bdf8" },
-  answering: { preset: "ember", color: "#ff9c76" },
-  awaiting: { preset: "solar", color: "#ffd36e" },
+  answering: { preset: "frost", color: "#38bdf8" },
+  awaiting: { preset: "solar", color: "#eab308" },
   paused: { preset: "frost", color: "#b8dfff" },
   stopped: { preset: "frost", color: "#94a3b8" },
-  error: { preset: "ember", color: "#ff647c" },
+  error: { preset: "ember", color: "#ef4444" },
 };
 
 function statusFor(name) {
@@ -347,10 +347,18 @@ function AssistantOrb() {
   }, [send]);
 
   useEffect(() => {
-    // Give Handy a paste target at startup. This first programmatic focus stays
-    // visually quiet; typing or a keyboard focus action reveals the field.
-    inputRef.current?.focus({ preventScroll: true });
+    const keepFocus = () => {
+      inputRef.current?.focus({ preventScroll: true });
+    };
+    keepFocus();
     suppressInitialFocusReveal.current = false;
+
+    window.addEventListener("focus", keepFocus);
+    window.addEventListener("click", keepFocus);
+    return () => {
+      window.removeEventListener("focus", keepFocus);
+      window.removeEventListener("click", keepFocus);
+    };
   }, []);
 
   const handleKeyDown = (event) => {
@@ -381,7 +389,12 @@ function AssistantOrb() {
     }
   };
 
-  const phase = connection === "connected" ? status.phase : "error";
+  const phase =
+    draft.trim()
+    ? "listening"
+    : connection === "connected"
+      ? status.phase
+      : "error";
   const orb = COLORS[phase] || COLORS.ready;
   const connectionLabel =
     connection === "connected"
@@ -422,7 +435,7 @@ function AssistantOrb() {
         aria-label={`PESU assistant. ${status.label}. Console ${connectionLabel}. Click to ${activityOpen ? "hide" : "view"} activity.`}
         aria-expanded={activityOpen}
         aria-controls="activity-panel"
-        onMouseDown={(event) => event.preventDefault()}
+        onMouseDown={(event) => { if (!isOverlay) event.preventDefault(); }}
         onClick={() => {
           inputRef.current?.focus({ preventScroll: true });
           if (!isOverlay) setActivityOpen((open) => !open);

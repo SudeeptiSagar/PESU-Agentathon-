@@ -34,7 +34,7 @@ input {
 }
 
 .orb-screen {
-  --orb-tint: rgba(130, 168, 255, 0.16);
+  --orb-tint: rgba(56, 189, 248, 0.22); /* Blue idle */
   position: relative;
   display: grid;
   width: 100vw;
@@ -51,7 +51,7 @@ input {
 }
 
 .orb-screen--thinking {
-  --orb-tint: rgba(138, 107, 255, 0.2);
+  --orb-tint: rgba(34, 197, 94, 0.25); /* Green thinking */
 }
 
 .orb-screen--acting {
@@ -63,7 +63,7 @@ input {
 }
 
 .orb-screen--listening {
-  --orb-tint: rgba(99, 247, 213, 0.2);
+  --orb-tint: rgba(249, 115, 22, 0.25); /* Orange listening */
 }
 
 .orb-screen--answering {
@@ -458,16 +458,20 @@ body.overlay-mode .activity-panel {
 body.overlay-mode .capture-input,
 body.overlay-mode .capture-input--visible {
   position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 1px !important;
-  height: 1px !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   padding: 0 !important;
   margin: 0 !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
+  opacity: 0.001 !important;
+  pointer-events: auto !important;
   border: none !important;
   background: transparent !important;
+  outline: none !important;
+  color: transparent !important;
   box-shadow: none !important;
-  clip: rect(0, 0, 0, 0) !important;
+  clip: auto !important;
+  clip-path: none !important;
+  cursor: default !important;
+  z-index: 5 !important;
 }

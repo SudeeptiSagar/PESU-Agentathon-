@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from playwright.async_api import async_playwright
 
 from PyQt5.QtCore import QPoint, Qt, QTimer, QUrl, QEvent
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMenu
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -163,18 +163,17 @@ async def startup_browser() -> None:
         )
         ctx = await browser.new_context(no_viewport=True)
         page = await ctx.new_page()
-        await page.add_init_script(TARGET_OVERLAY_SCRIPT)
-        
-        target_url = f"http://127.0.0.1:{app.state.site_port}/portal/apply.html"
-        await page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
-        try:
-            await page.evaluate(TARGET_OVERLAY_SCRIPT)
-        except Exception:
-            pass
-
         app.state.pw = pw
         app.state.browser = browser
         app.state.agent_page = page
+        await page.add_init_script(TARGET_OVERLAY_SCRIPT)
+        
+        target_url = f"http://127.0.0.1:{app.state.site_port}/portal/apply.html"
+        try:
+            await page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
+            await page.evaluate(TARGET_OVERLAY_SCRIPT)
+        except Exception as err:
+            log.warning("Initial page navigation notice: %s", err)
         log.info("Agent Chrome browser ready and listening on same event loop.")
     except Exception as e:
         log.error("Failed to launch Playwright browser on startup: %s", e)
@@ -215,6 +214,13 @@ class DesktopOverlaySession:
         self.last_speech = ""
         self.lock = asyncio.Lock()
 
+    @property
+    def current_page(self):
+        p = getattr(app.state, "agent_page", None) or self.page
+        if p and not p.is_closed():
+            return p
+        return None
+
     async def emit(self, event_type: str, **kwargs: Any) -> None:
         try:
             await self.ws.send_json({"type": event_type, **kwargs})
@@ -226,9 +232,15 @@ class DesktopOverlaySession:
         await self.emit("speak", text=text)
 
     async def target_and_act(self, selector: str, label: str, action: str, value: str = "") -> bool:
-        page = self.page or getattr(app.state, "agent_page", None)
-        if not page or page.is_closed():
-            log.warning("Browser page is closed or not available.")
+        page = self.current_page
+        if not page:
+            for _ in range(10):
+                await asyncio.sleep(0.5)
+                page = self.current_page
+                if page:
+                    break
+        if not page:
+            log.warning("Browser page is closed or not available. agent_page=%r", getattr(app.state, "agent_page", None))
             await self.say("Browser page is not available.")
             return False
 
@@ -417,11 +429,11 @@ async def ws_console(ws: WebSocket) -> None:
 class FloatingOrbWidget(QMainWindow):
     def __init__(self, url: str):
         super().__init__()
-        # Frameless, Always on Top, Tool Window with Transparent Background
+        # Frameless, Always on Top, Transparent Desktop Widget
         self.setWindowFlags(
             Qt.FramelessWindowHint |
             Qt.WindowStaysOnTopHint |
-            Qt.Tool
+            Qt.SubWindow
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setStyleSheet("background: transparent;")
@@ -438,15 +450,75 @@ class FloatingOrbWidget(QMainWindow):
         self.web.load(QUrl(url))
         self.drag_position = None
 
-        # Filter events on web view to allow smooth dragging anywhere on the ball
+        # Filter events on web view to allow smooth dragging and right-click closing
         self.web.installEventFilter(self)
+
+    def activate_overlay_focus(self) -> None:
+        """Ensure the floating orb has OS foreground focus so Handy pastes into it."""
+        try:
+            import ctypes
+            ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
+        except Exception:
+            pass
+        self.raise_()
+        self.activateWindow()
+        self.web.setFocus()
+        self.web.page().runJavaScript("document.querySelector('input')?.focus();")
+
+    def show_context_menu(self, pos: QPoint) -> None:
+        """Right-click context menu to close the application cleanly."""
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #0f172a;
+                color: #f8fafc;
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                border-radius: 8px;
+                padding: 4px;
+                font-family: 'Segoe UI', system-ui, sans-serif;
+                font-size: 13px;
+            }
+            QMenu::item {
+                padding: 6px 18px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #ef4444;
+                color: #ffffff;
+            }
+        """)
+        close_action = menu.addAction("Close Assistant (Exit)")
+        action = menu.exec_(pos)
+        if action == close_action:
+            self.close_application()
+
+    def close_application(self) -> None:
+        log.info("Closing application from floating overlay menu...")
+        QApplication.quit()
+
+    def enterEvent(self, event) -> None:
+        self.activate_overlay_focus()
+        super().enterEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            self.activate_overlay_focus()
+        elif event.button() == Qt.RightButton:
+            self.show_context_menu(event.globalPos())
+
+    def contextMenuEvent(self, event) -> None:
+        self.show_context_menu(event.globalPos())
 
     def eventFilter(self, source, event):
         if source == self.web:
-            if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
-                self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
-                self.raise_()
-                self.activateWindow()
+            if event.type() == QEvent.MouseButtonPress:
+                if event.button() == Qt.LeftButton:
+                    self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+                    self.activate_overlay_focus()
+                elif event.button() == Qt.RightButton:
+                    self.show_context_menu(event.globalPos())
+                    return True
             elif event.type() == QEvent.MouseMove and event.buttons() == Qt.LeftButton:
                 if self.drag_position is not None:
                     self.move(event.globalPos() - self.drag_position)
