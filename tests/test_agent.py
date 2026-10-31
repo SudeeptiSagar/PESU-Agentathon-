@@ -881,4 +881,176 @@ async def test_a_real_login_page_hands_over_to_the_user(live):
     await agent.handle_utterance("log me in", live.ctx)
     await finish_task(live)
     assert live.ctx.session.state == "NEEDS_HUMAN_CHECK" and live.prompts == []
-    assert "Please do this yourself, then say done." in live.say()[-1]
+    assert live.say()[-1] == "The page is asking you to sign in. Please sign in yourself, then say done."
+
+
+# ---------------------------------------------------------------- ctx.listen: onboarding and unlock ask, the user answers
+def test_handover_does_not_repeat_say_done():
+    assert agent._handover("There is a robot check on the page. Please complete it, then say done.") == \
+        "There is a robot check on the page. Please complete it, then say done."
+    assert agent._handover("there is a code field") == "There is a code field. Please do this yourself, then say done."
+
+
+async def test_while_something_is_listening_sentences_are_answers_not_tasks(w):
+    import asyncio as aio
+    answer = aio.create_task(w.ctx.listen())
+    await aio.sleep(0)
+    assert w.ctx.listening is True
+    await agent.handle_utterance("4 8 2 9", w.ctx)           # for example a PIN
+    assert await aio.wait_for(answer, 2) == "4 8 2 9"
+    assert w.ctx.listening is False and w.prompts == [] and w.session.state == "IDLE" and w.session.goal is None
+    assert not [e for e in w.events if e["type"] == "speak"]  # nothing was said back about it
+
+
+async def test_stop_still_works_while_something_is_listening_and_ends_the_question(w):
+    import asyncio as aio
+    w.ctx.setup_task = aio.create_task(w.ctx.listen())
+    await aio.sleep(0)
+    await agent.handle_utterance("stop", w.ctx)
+    assert w.say()[-1] == "Stopped." and w.ctx.listening is False and w.ctx.setup_task is None
+
+
+async def test_an_unread_answer_does_not_leak_into_the_next_question(w):
+    w.ctx.inbox.put_nowait("stale")
+    await agent.stop(w.ctx)
+    assert w.ctx.inbox.empty()
+
+
+async def test_commands_are_answers_too_while_listening_except_stop(w):
+    import asyncio as aio
+    for word in ("confirm", "yes", "done", "pause"):
+        answer = aio.create_task(w.ctx.listen())
+        await aio.sleep(0)
+        await agent.handle_utterance(word, w.ctx)
+        assert await aio.wait_for(answer, 2) == word
+    assert w.session.state == "IDLE" and w.events == []
+
+
+# ---------------------------------------------------------------- a plain-text reply is the final answer
+async def test_a_plain_text_reply_is_spoken_as_the_final_answer(w, monkeypatch):
+    async def prose(messages, tool_schemas=None):
+        w.prompts.append(messages)
+        return {"text": "She was born in Karnal, Haryana.", "tool_call": None}
+    monkeypatch.setattr(agent, "llm", prose)
+    await w.hear("where was she born")
+    assert w.session.state == "DONE" and w.say() == ["She was born in Karnal, Haryana."]
+    assert len(w.prompts) == 1 and w.session.failures == 0
+
+
+async def test_a_plain_text_reply_never_leaks_a_saved_value(w, monkeypatch):
+    async def prose(messages, tool_schemas=None):
+        return {"text": "Hello Ramesh Kumar, your id is 0000 1111 2222.", "tool_call": None}
+    monkeypatch.setattr(agent, "llm", prose)
+    await w.hear("greet me")
+    assert w.say() == ["Hello [saved full_name], your id is [hidden]."]
+
+
+async def test_an_empty_reply_is_still_a_failure(w, monkeypatch):
+    async def nothing(messages, tool_schemas=None):
+        return {"text": "  ", "tool_call": None}
+    monkeypatch.setattr(agent, "llm", nothing)
+    await w.hear("do it")
+    assert w.session.state == "NEEDS_USER" and "trouble" in w.say()[-1]
+
+
+# ---------------------------------------------------------------- the number on the result page is read out
+@pytest.mark.parametrize("text,expected", [
+    ("Application received.\nYour acknowledgment number is ACK-2026-0042.\nKeep it safe.",
+     ["Your acknowledgment number is ACK-2026-0042."]),
+    ("Thank you! Your order number is AS-100. Total 249 rupees.", ["Your order number is AS-100."]),
+    ("Reference no. 7788 was created. Confirmation code: 4421", ["Reference no 7788 was created.", "Confirmation code: 4421."]),
+    ("Your application number is pending", []),                      # no digits: nothing to keep
+    ("We value your order. Call us on 1800 123 456", []),             # a number, but not an order number
+    ("", []),
+])
+def test_outcome_sentences(text, expected):
+    assert agent.outcome_sentences(text) == expected
+
+
+def test_digits_are_spaced_without_touching_letters():
+    assert agent._space_digits("ACK-2026-0042 on 4 March") == "ACK-2 0 2 6-0 0 4 2 on 4 March"
+
+
+async def test_after_confirm_the_acknowledgment_number_is_spoken_by_the_system(w, monkeypatch):
+    async def hold(call_, session, browser):
+        session.pending_action = {"element_id": "b1", "label": "Submit application", "kind": "submit",
+                                  "url": SNAP["url"], "domain": "localhost", "selector": "#b1"}
+        return "held: 'Submit application' (submit) was NOT pressed."
+    w.executor.run = hold
+
+    async def commit(session, browser):
+        session.pending_action, session.confirmed = None, False
+        return "ok: pressed 'Submit application'"
+
+    async def main_text(page, max_chars=4000):
+        return "Application received.\nYour acknowledgment number is ACK-2026-0042 for Ramesh Kumar."
+    monkeypatch.setattr(agent.tools, "commit_pending", commit)
+    monkeypatch.setattr(agent.perception, "main_text", main_text)
+    w.llm_script = [call("click", element_id="b1")]
+    await w.hear("apply")
+    w.llm_script = [call("finish", summary="Done.")]
+    w.executor.run = StubExecutor().run
+    await w.hear("confirm")
+    assert "Your acknowledgment number is ACK-2 0 2 6-0 0 4 2 for [saved full_name]." in w.say()
+
+
+async def test_a_result_page_that_cannot_be_read_does_not_stop_the_confirmation(w, monkeypatch):
+    async def commit(session, browser):
+        session.pending_action, session.confirmed = None, False
+        return "ok: pressed 'Submit application'"
+
+    async def broken(page, max_chars=4000):
+        raise RuntimeError("navigating")
+    monkeypatch.setattr(agent.tools, "commit_pending", commit)
+    monkeypatch.setattr(agent.perception, "main_text", broken)
+    w.session.state, w.session.confirmed = "AWAITING_CONFIRM", False
+    w.session.pending_action = {"label": "Submit application", "domain": "localhost"}
+    w.llm_script = [call("finish", summary="Done.")]
+    await w.hear("confirm")
+    assert w.session.state == "DONE" and w.say()[0] == "Pressed 'Submit application'."
+
+
+async def test_the_page_status_region_is_read_out_after_a_confirmed_press(w, monkeypatch):
+    class Page(StubPage):
+        async def evaluate(self, js):
+            return ["ACK-2026-0042", "Please complete the robot check"]
+    w.browser.active = Page()
+    monkeypatch.setattr(agent, "OUTCOME_SETTLE_S", 0)
+
+    async def main_text(page, max_chars=4000):
+        return "Apply for Disability Pension"
+    monkeypatch.setattr(agent.perception, "main_text", main_text)
+    await agent._announce_outcome(w.ctx)
+    assert w.say() == ["The page says: ACK-2 0 2 6-0 0 4 2.", "The page says: Please complete the robot check."]
+
+
+async def test_a_status_region_already_covered_by_a_sentence_is_not_repeated(w, monkeypatch):
+    class Page(StubPage):
+        async def evaluate(self, js):
+            return ["Your acknowledgment number is ACK-2026-0042"]
+    w.browser.active = Page()
+    monkeypatch.setattr(agent, "OUTCOME_SETTLE_S", 0)
+
+    async def main_text(page, max_chars=4000):
+        return "Your acknowledgment number is ACK-2026-0042."
+    monkeypatch.setattr(agent.perception, "main_text", main_text)
+    await agent._announce_outcome(w.ctx)
+    assert w.say() == ["Your acknowledgment number is ACK-2 0 2 6-0 0 4 2."]
+
+
+async def test_a_status_region_never_leaks_saved_values_and_a_broken_page_is_ignored(w, monkeypatch):
+    class Page(StubPage):
+        async def evaluate(self, js):
+            return ["Thank you Ramesh Kumar"]
+    w.browser.active = Page()
+    monkeypatch.setattr(agent, "OUTCOME_SETTLE_S", 0)
+    await agent._announce_outcome(w.ctx)
+    assert w.say() == ["The page says: Thank you [saved full_name]."]
+
+    class Broken(StubPage):
+        async def evaluate(self, js):
+            raise RuntimeError("navigating")
+    w.events.clear()
+    w.browser.active = Broken()
+    await agent._announce_outcome(w.ctx)
+    assert w.say() == []

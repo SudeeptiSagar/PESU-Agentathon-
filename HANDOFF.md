@@ -14,7 +14,7 @@ Written Sat 31 Oct 2026, about 18:30 IST, at the end of the planning session. Ow
 | `scripts/create_issues.py` | Creates labels, milestones and assigned issues; safe to re-run |
 | GitHub issues | **Created.** Per-member umbrella issues #1 to #4 (M1 to M4) and 39 per-ticket issues #6 to #44 with labels, milestones and assignees. CORE-14 is added by the 3.1 docs PR |
 | Git | `main` has the skeleton, `llm.py`, `config.py`, the reliability script and the 3.1 docs (PRs #5, #45, #47, #48, #49 merged, plus Sudeepti's BRW-01, BRW-02, BRW-03 and BRW-09). Check `gh pr list` for anything newer |
-| Code | CORE-01 to CORE-04 done (173 tests at the time of writing, which need `playwright install chromium`); `llm.py` and the model checked against a real `qwen3:8b`. CORE-05 notes are in `docs/REFERENCE_NOTES.md`. Everything else is a stub marked `# STUB: <ticket>`: session state machine, profile, tool executor, agent loop, and all of M2, M3 and M4's modules |
+| Code | CORE-01 to CORE-12 done (700+ tests, which need `playwright install chromium`); `llm.py` and the model checked against a real `qwen3:8b`. CORE-05 notes are in `docs/REFERENCE_NOTES.md`. Everything else is a stub marked `# STUB: <ticket>`: session state machine, profile, tool executor, agent loop, and all of M2, M3 and M4's modules |
 
 ## 2. Team and tickets
 
@@ -39,10 +39,12 @@ Tell the team: pull `main` after #5 merges, read the PRD "What changed in 3.0" a
 
 ## 4. Your next build steps (M1)
 
-1. Merge PR #50 (CORE-05 reference notes) if still open.
-2. CORE-06 state machine, CORE-07 profile, CORE-08 executor and domain policy, CORE-09 site resolution (CP3, 23:00). The hard rules (placeholders, irreversible hold, domain policy) are not enforced in code until CORE-08.
-3. CORE-10 agent loop, CORE-11 integration, CORE-12 confirmation flow (CP4, 01:00). Re-run `scripts/reliability_test.py` once CORE-10's real prompt exists.
-4. CORE-14 start script and keyboard shortcut (CP5), CORE-13 final integration and freeze.
+1. Review and merge Abishek's PR #66 once he has done the items on issue #4 (his demo B needs the CORE-12 flow, which is done).
+2. Vishal's Console and voice branches (`ui/UI-02-console`, `ui/UI-06-voice`, `ui/UI-01-handy-setup`) still have no PRs. The Console must be
+   built (`cd client; npm ci; npm run build`) and its speech must queue instead of cancelling the previous sentence (read-back is spoken
+   chunk by chunk). Onboarding and PIN unlock (UI-07) use `ctx.listen()`.
+3. CORE-14 start script and keyboard shortcut (CP5), then CORE-13 final integration and freeze.
+4. Run `docs/OLLAMA_CHECK.md` section CORE-10 on a laptop with Ollama: the agent loop has only been tested with a scripted model so far.
 
 Checkpoints: CP1 19:30, CP2 20:30, CP3 23:00, CP4 01:00, CP5 04:00, freeze 11:00 Sunday.
 

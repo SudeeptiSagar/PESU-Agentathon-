@@ -426,6 +426,11 @@ def words_to_digits(s: str) -> str                           # "nine eight seven
 # onboarding.py (M2)
 async def run_onboarding(ctx) -> None                        # asks questions, confirms, calls save_profile
 async def run_unlock(ctx) -> None                            # asks PIN, calls load_profile
+#  main.py starts one of them (as ctx.setup_task) when the first Console connects: run_unlock if a profile exists,
+#  else run_onboarding. To ask the user something, `answer = await ctx.listen()`: while someone is listening, every
+#  sentence (except "stop") goes to that call instead of starting a task, and is never logged. Secrets: emit
+#  `input_mode` typed_secret first and voice after. "stop" ends the question. On an error the agent still works
+#  but cannot fill forms; never put the PIN or a profile value in an error message.
 
 # browser.py (M3)
 class BrowserController:
@@ -462,6 +467,9 @@ async def check(action: dict, context: dict) -> dict
 
 # verifier.py (M4)
 async def verify(page, session: Session) -> list[dict]       # [{"field_id","label","expected","actual","kind": "mismatch"|"missing"|"error"}]
+#  asked of M4 for CORE-12: async def read_values(page, session) -> dict[field_id, str]   # real values on the page, "" if not found
+#  A held form action goes VERIFYING -> (problems: spoken, the model fixes them, up to 3 rounds, then the user is asked)
+#  -> READBACK -> AWAITING_CONFIRM. The model is told which field is wrong (label and kind), never a value.
 
 # readback.py (M4)
 def build_readback(session: Session, actual_values: dict) -> list[str]

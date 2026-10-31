@@ -2,6 +2,7 @@
 
 Owner: M1. Only this module's state machine may move to COMMITTING (hard rule 2).
 """
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
@@ -170,6 +171,11 @@ class Context:
     question: dict | None = None      # what the user was last asked: {"type": "answer"|"approve_domain"|"gate"|"continue", ...}
     notes: list = field(default_factory=list)   # user answers and interjections for the LLM
     approved_action: dict | None = None         # a gated action the user said yes to
+    verify_rounds: int = 0                      # form checks that found problems for the current held action
+    # Onboarding and PIN unlock ask the user something and wait for the answer (see listen):
+    inbox: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
+    listening: bool = False
+    setup_task: Any = None                      # the asyncio.Task running onboarding or unlock
 
     async def emit(self, type: str, **payload: Any) -> None:
         """Send {"type": type, **payload} to the Voice Console."""
@@ -192,6 +198,18 @@ class Context:
                                 message="Speech output stopped working, so I will show text only.")
             else:
                 await self.refocus()
+
+    async def listen(self) -> str:
+        """Wait for the user's next sentence and return it. For onboarding and unlock (M2).
+
+        While someone is listening, agent.handle_utterance hands every sentence to this queue instead of starting
+        a task, except "stop". The text is never logged or audited here (it may be a PIN or an Aadhaar number).
+        """
+        self.listening = True
+        try:
+            return await self.inbox.get()
+        finally:
+            self.listening = False
 
     async def refocus(self) -> None:
         """Give the Voice Console the keyboard focus back (Handy pastes into it, PRD 8.3)."""

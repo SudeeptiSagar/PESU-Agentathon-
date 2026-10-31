@@ -14,7 +14,7 @@ import json
 import logging
 import re
 
-from app import audit, config, gate, humancheck, readback, tools, voice
+from app import audit, config, gate, humancheck, perception, readback, tools, verifier, voice
 from app.llm import llm
 from app.profile import PLACEHOLDER_KEYS
 from app.session import Context, IllegalTransition, confirm, resume, transition
@@ -34,6 +34,8 @@ GATED = frozenset({"navigate", "web_search", "click", "type_text", "fill_field",
 # Results that need no spoken narration (the domain announcement covers navigate).
 QUIET = frozenset({"read_page", "scroll", "navigate"})
 GATE_TIMEOUT_S = 15
+VERIFY_TIMEOUT_S = 20
+MAX_VERIFY_ROUNDS = 3     # form checks that find problems before the agent asks the user for help
 HISTORY_LINES = 10
 NOTE_LINES = 8
 RESUMABLE = ("PLANNING", "ACTING", "VERIFYING", "READBACK", "AWAITING_CONFIRM")
@@ -137,6 +139,12 @@ def _remember(ctx: Context, n: int, call: dict | None, result: str) -> None:
     ctx.session.history.append(tools.hide_profile_text(line, ctx.session.profile))
 
 
+def _handover(hint: str) -> str:
+    """What to say when only a person can continue. Hints from humancheck already end with 'say done'."""
+    text = _sentence(hint)
+    return text if "say done" in text.lower() else f"{text} Please do this yourself, then say done."
+
+
 def _sentence(text: str) -> str:
     text = text.strip()
     return (text[:1].upper() + text[1:]).rstrip(".") + "." if text else ""
@@ -192,6 +200,8 @@ async def handle_utterance(text: str, ctx: Context) -> None:
     if not text:
         return
     cmd = voice.match_command(text)
+    if ctx.listening and cmd != "stop":      # onboarding or unlock asked a question: this is the answer
+        return ctx.inbox.put_nowait(text)
     if cmd == "stop":
         return await stop(ctx)
     if cmd == "pause":
@@ -229,7 +239,7 @@ async def _free_text(ctx: Context, text: str) -> None:
             return await ctx.say("The browser is not ready, so I can't do that yet.")
         s.goal, s.failures, s.history, s.progress, s.expected = text, 0, [], [], {}
         s.pending_action, s.confirmed = None, False
-        ctx.notes, ctx.question, ctx.approved_action = [], None, None
+        ctx.notes, ctx.question, ctx.approved_action, ctx.verify_rounds = [], None, None, 0
         _audit("task_start", goal=text[:200])
         await set_state(ctx, "PLANNING")
         await set_state(ctx, "ACTING")
@@ -256,11 +266,15 @@ async def _free_text(ctx: Context, text: str) -> None:
 async def stop(ctx: Context) -> None:
     """Halt the agent loop within one step (hard rule 7)."""
     task, ctx.task = ctx.task, None
-    if task is not None and not task.done() and task is not asyncio.current_task():
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+    setup, ctx.setup_task = ctx.setup_task, None
+    for running in (task, setup):
+        if running is not None and not running.done() and running is not asyncio.current_task():
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+    while not ctx.inbox.empty():             # an answer nobody read must not leak into the next question
+        ctx.inbox.get_nowait()
     transition(ctx.session, "IDLE")
-    ctx.question, ctx.notes, ctx.approved_action = None, [], None
+    ctx.question, ctx.notes, ctx.approved_action, ctx.verify_rounds = None, [], None, 0
     _audit("stop")
     if ctx.tts is not None:
         ctx.tts.interrupt()
@@ -382,6 +396,8 @@ async def _confirm(ctx: Context) -> None:
     ctx.notes.append(f"The user confirmed and the held control was pressed. Outcome: {result}")
     await set_state(ctx, "ACTING")                   # COMMITTING -> ACTING: read what happened and finish
     await ctx.say(_sentence(detail) if status == "ok" else _sentence(f"That did not work. {detail}"))
+    if status == "ok":
+        await _announce_outcome(ctx)
     _start(ctx)
 
 
@@ -414,18 +430,190 @@ async def human_check(ctx: Context, page) -> bool:
     await set_state(ctx, "NEEDS_HUMAN_CHECK")
     _audit("human_check", challenge=challenge["kind"])
     await ctx.emit("alert", level="warning", message=f"{challenge['kind']}: {challenge['hint']}")
-    await ctx.say(f"{_sentence(challenge['hint'])} Please do this yourself, then say done.")
+    await ctx.say(_handover(challenge["hint"]))
     return True
 
 
 # ---------------------------------------------------------------- confirmation of a held action
-async def begin_confirmation(ctx: Context) -> None:
-    """An irreversible control was held. Describe it and wait for "confirm". CORE-12 adds the form check."""
+def _entry_is_sensitive(entry: dict) -> bool:
+    key = str(entry.get("source", "")).partition(":")[2]
+    return key in config.SENSITIVE_KEYS or key in ("aadhaar", "bank_account", "ifsc")
+
+
+def _mask(value) -> str:
+    text = re.sub(r"\s+", "", str(value or ""))
+    return "****" + text[-4:] if len(text) >= 4 else "****"
+
+
+def _space_digits(text: str) -> str:
+    """Digits are spoken one by one so they are not misheard: "560001" -> "5 6 0 0 0 1"."""
+    return re.sub(r"\d+", lambda m: " ".join(m.group()), text)
+
+
+def _spoken_value(value) -> str:
+    text = str(value or "").strip()
+    return _space_digits(text) if re.fullmatch(r"[\d\s-]+", text) else text
+
+
+# A sentence on a result page that carries a number the user must keep.
+OUTCOME_RE = re.compile(r"\b(acknowledg\w*|confirmation|reference|order|booking|receipt|transaction|application)\b"
+                        r"[^.\n]{0,40}\b(number|no\.?|id|code)\b", re.I)
+
+
+def outcome_sentences(text: str, limit: int = 2) -> list[str]:
+    """Sentences of a result page that give a number to keep (acknowledgment, order, reference ...)."""
+    found = []
+    text = re.sub(r"\b(no|nr)\.(?=\s*\d)", r"\1", text or "", flags=re.I)      # "Reference no. 7788" is one unit
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        sentence = sentence.strip()
+        if sentence and re.search(r"\d", sentence) and OUTCOME_RE.search(sentence):
+            found.append(sentence.rstrip(".") + ".")
+        if len(found) == limit:
+            break
+    return found
+
+
+# Text the page itself announces to assistive technology (status and alert regions): confirmations and errors.
+LIVE_REGIONS_JS = """() => Array.from(document.querySelectorAll(
+    '[role=status],[role=alert],[aria-live=polite],[aria-live=assertive]'))
+  .filter(el => el.isConnected && !el.closest('[hidden],[aria-hidden="true"]'))
+  .map(el => (el.innerText || '').replace(/\\s+/g, ' ').trim())
+  .filter(text => text && text.length <= 200)"""
+OUTCOME_SETTLE_S = 0.4          # let the page's own script show its result
+
+
+async def _announce_outcome(ctx: Context) -> None:
+    """After the user confirmed and the control was pressed, say what the page says happened (PRD step 9): the sentence
+    with an acknowledgment, order or reference number, and anything the page announces in a status or alert region.
+    Done here, not by the model, so the user always hears it."""
+    page = getattr(ctx.browser, "active", None)
+    if page is None:
+        return
+    await asyncio.sleep(OUTCOME_SETTLE_S)
+    spoken: list[str] = []
+    try:
+        text = await asyncio.wait_for(perception.main_text(page, max_chars=1500), 10)
+        spoken += outcome_sentences(text)
+    except Exception:
+        pass
+    try:
+        for note in await asyncio.wait_for(page.evaluate(LIVE_REGIONS_JS), 10):
+            sentence = "The page says: " + str(note).rstrip(".") + "."
+            if not any(str(note).rstrip(".") in done for done in spoken):      # not already said above
+                spoken.append(sentence)
+    except Exception:
+        pass
+    for sentence in spoken[:3]:
+        await ctx.say(_space_digits(tools.hide_profile_text(sentence, ctx.session.profile)))
+
+
+def _problem_sentence(s, problem: dict) -> str:
+    """One spoken sentence for a verifier problem. Sensitive values are never spoken, only that they differ."""
+    entry = s.expected.get(problem.get("field_id"), {})
+    label = problem.get("label") or "A field"
+    kind = problem.get("kind")
+    if kind == "unavailable":
+        return "I could not check the form against what I entered."
+    if kind == "missing":
+        return f"{label} is empty on the page."
+    if kind == "error":
+        detail = "" if _entry_is_sensitive(entry) else tools.hide_profile_text(str(problem.get("actual") or ""), s.profile)[:120]
+        return f"{label} shows an error." + (f" It says: {detail}." if detail else "")
+    if _entry_is_sensitive(entry):
+        return f"{label} on the page does not match what I entered."
+    return (f"{label} looks wrong. The page shows {_spoken_value(problem.get('actual'))} "
+            f"but I entered {_spoken_value(problem.get('expected'))}.")
+
+
+def _field_table(s, problems: list[dict]) -> list[dict]:
+    """Rows for the Console: label, value (sensitive ones masked) and ok / the kind of problem."""
+    bad = {p.get("field_id"): p for p in problems}
+    rows = []
+    for field_id, entry in s.expected.items():
+        problem = bad.pop(field_id, None)
+        shown = problem.get("actual") if problem else entry.get("value", "")
+        rows.append({"label": entry.get("label") or field_id,
+                     "value_masked": _mask(shown) if _entry_is_sensitive(entry) else str(shown or ""),
+                     "status": problem["kind"] if problem else "ok"})
+    for problem in bad.values():                      # problems on fields we never typed (page errors, required fields)
+        rows.append({"label": problem.get("label") or "Field", "value_masked": _mask(problem.get("actual")),
+                     "status": problem.get("kind", "error")})
+    return rows
+
+
+async def _actual_values(page, s) -> dict:
+    """Real values on the page for the read-back. Needs verifier.read_values (asked of M4, JEV-02/03); without it the
+    read-back uses the values just verified as equal to the page, which is only valid after a clean check."""
+    reader = getattr(verifier, "read_values", None)
+    if reader is None:
+        return {}
+    try:
+        values = await asyncio.wait_for(reader(page, s), VERIFY_TIMEOUT_S)
+    except Exception as e:
+        log.warning("reading the page values failed: %s", type(e).__name__)
+        return {}
+    return values if isinstance(values, dict) else {}
+
+
+async def _verify(page, s) -> list[dict]:
+    try:
+        return list(await asyncio.wait_for(verifier.verify(page, s), VERIFY_TIMEOUT_S))
+    except Exception as e:      # a check that cannot run is a problem, never a pass
+        log.warning("form check failed: %s", type(e).__name__)
+        return [{"field_id": "", "label": "The form check", "expected": "", "actual": "", "kind": "unavailable"}]
+
+
+async def begin_confirmation(ctx: Context) -> bool:
+    """An irreversible control was held. Check the form, read it back from the real page, wait for "confirm".
+
+    A form (values the agent typed): VERIFYING -> problems are spoken and the model fixes them, up to
+    MAX_VERIFY_ROUNDS times; a clean check -> READBACK from the page's actual values -> AWAITING_CONFIRM.
+    Anything else (a plain button): describe it and wait. The model is told which field is wrong, never any value.
+
+    Runs inside the loop's own task. Returns True when the form needs fixing and the loop should carry on (state is
+    ACTING again), False when it is now waiting for the user.
+    """
     s = ctx.session
-    await set_state(ctx, "AWAITING_CONFIRM")
+    page = ctx.browser.active
+    if not s.expected:
+        await set_state(ctx, "AWAITING_CONFIRM")
+        description = readback.describe_pending(s)
+        await ctx.emit("pending", description=description)
+        await ctx.say(description + " Say confirm to go ahead, or no.")
+        return False
+
+    await set_state(ctx, "VERIFYING")
+    problems = await _verify(page, s)
+    if problems:
+        ctx.verify_rounds += 1
+        _audit("verify", problems=len(problems), kinds=sorted({p.get("kind", "") for p in problems}))
+        await ctx.emit("field_table", fields=_field_table(s, problems))
+        report = " ".join(_problem_sentence(s, p) for p in problems[:5])
+        await ctx.emit("alert", level="warning", message=report)      # the Console shows it in its activity panel
+        await ctx.say(report)
+        s.pending_action = None                              # held again when the model clicks submit again
+        if ctx.verify_rounds >= MAX_VERIFY_ROUNDS:
+            ctx.verify_rounds = 0
+            await ask(ctx, "I still cannot get the form right. What should I do?")
+            return False
+        items = "; ".join(f"{p.get('label', 'a field')} ({p.get('kind', 'problem')})" for p in problems[:8])
+        ctx.notes.append(tools.hide_profile_text(
+            f"Checking the form against what you entered found: {items}. Fix each with fill_field using its placeholder "
+            "(or select_option), then click the submit button again. The values are not shown to you.", s.profile))
+        await set_state(ctx, "ACTING")
+        return True
+
+    ctx.verify_rounds = 0
+    await set_state(ctx, "READBACK")
+    chunks = readback.build_readback(s, await _actual_values(page, s))
     description = readback.describe_pending(s)
+    await set_state(ctx, "AWAITING_CONFIRM")
+    await ctx.emit("field_table", fields=_field_table(s, []))
     await ctx.emit("pending", description=description)
-    await ctx.say(description + " Say confirm to go ahead, or no.")
+    await ctx.say(description)
+    for chunk in chunks:                  # one speak event per chunk, as readback.build_readback defines; the last one
+        await ctx.say(chunk)              # is always the "Say confirm ..." instruction. The Console must queue speech.
+    return False
 
 
 # ---------------------------------------------------------------- the loop
@@ -484,14 +672,21 @@ async def run_task(ctx: Context) -> None:
 
         call, ctx.approved_action = ctx.approved_action, None
         if call is None:
+            reply = None
             try:
-                call = (await llm(build_messages(ctx, snap), tools.TOOL_SCHEMAS))["tool_call"]
+                reply = await llm(build_messages(ctx, snap), tools.TOOL_SCHEMAS)
+                call = reply["tool_call"]
             except Exception as e:
                 log.warning("llm call failed: %s", type(e).__name__)
                 await ctx.emit("alert", level="error", message="I could not reach the language model.")
                 call, error = None, f"error: the language model did not answer ({type(e).__name__})"
             else:
                 error = "error: no valid tool call from the model"
+            text = ((reply or {}).get("text") or "").strip()
+            if call is None and text:                # a model that answers in prose is giving its final answer
+                _remember(ctx, steps + 1, None, "(answered in plain text)")
+                await ctx.say(tools.hide_profile_text(text[:600], s.profile))
+                return await set_state(ctx, "DONE")
             if call is None:
                 s.failures += 1
                 _remember(ctx, steps + 1, None, error)
@@ -540,13 +735,15 @@ async def run_task(ctx: Context) -> None:
         elif status == "ask_user":
             return await ask(ctx, detail)
         elif status == "held":
-            return await begin_confirmation(ctx)
+            if await begin_confirmation(ctx):
+                continue                                 # the form had problems: keep working in this same task
+            return
         elif status == "needs_approval":
             return await ask(ctx, f"May I type your saved details on {detail}? Say yes or no.",
                              {"type": "approve_domain", "domain": detail})
         elif status == "needs_human":
             await set_state(ctx, "NEEDS_HUMAN_CHECK")
-            return await ctx.say(f"{_sentence(detail)} Please do this yourself, then say done.")
+            return await ctx.say(_handover(detail))
         elif status == "blocked":
             await ctx.say(_sentence(detail))
         else:                                        # error

@@ -324,3 +324,92 @@ def test_a_dead_console_socket_is_dropped_not_fatal():
 def test_session_is_fresh_per_app_start_not_per_connection():
     hub = main.get_hub()
     assert isinstance(hub.ctx.session, Session) and main.get_hub() is hub
+
+
+# ---------------------------------------------------------------- unlocking the saved profile on the first connection
+@pytest.fixture
+def unlock(monkeypatch):
+    """Record which onboarding step runs. `exists` says whether a profile file is present."""
+    calls = []
+    state = type("U", (), {"exists": True, "calls": calls, "error": None})()
+
+    async def run_unlock(ctx):
+        calls.append("unlock")
+        if state.error:
+            raise state.error
+        ctx.session.profile = {"full_name": "Ramesh Kumar"}
+
+    async def run_onboarding(ctx):
+        calls.append("onboarding")
+    monkeypatch.setattr(main.onboarding, "run_unlock", run_unlock)
+    monkeypatch.setattr(main.onboarding, "run_onboarding", run_onboarding)
+    monkeypatch.setattr(main.profile, "profile_exists", lambda: state.exists)
+    return state
+
+
+def test_the_first_console_unlocks_an_existing_profile_once(unlock):
+    client = TestClient(app)
+    with client.websocket_connect("/ws/console") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "key", "name": "Escape"})
+        until(ws, is_state("IDLE"))
+    with client.websocket_connect("/ws/console") as ws:          # a reload must not ask for the PIN again
+        ws.receive_json()
+    assert unlock.calls == ["unlock"] and app.state.hub.ctx.session.profile == {"full_name": "Ramesh Kumar"}
+
+
+def test_with_no_profile_onboarding_runs_instead(unlock):
+    unlock.exists = False
+    with TestClient(app).websocket_connect("/ws/console") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "key", "name": "Escape"})
+        until(ws, is_state("IDLE"))
+    assert unlock.calls == ["onboarding"]
+
+
+def test_a_failed_unlock_is_an_alert_and_the_agent_still_works(unlock, browsers, scripted):
+    unlock.error = RuntimeError("wrong pin 4829")
+    scripted.script = [{"name": "finish", "args": {"summary": "Done."}}]
+    with TestClient(app).websocket_connect("/ws/console") as ws:
+        ws.receive_json()
+        alert_event, _ = until(ws, lambda e: e["type"] == "alert")
+        assert "can't fill in forms" in alert_event["message"] and "4829" not in alert_event["message"]
+        ws.send_json({"type": "utterance", "text": "read the news"})
+        until(ws, is_state("DONE"))
+
+
+def test_a_refused_origin_never_starts_the_unlock(unlock):
+    with pytest.raises(WebSocketDisconnect):
+        with TestClient(app).websocket_connect("/ws/console", headers={"origin": "https://evil.example"}):
+            pass
+    assert unlock.calls == []
+
+
+def test_the_answer_to_an_unlock_question_goes_to_it_not_to_the_agent(monkeypatch, browsers, scripted):
+    got = []
+
+    async def run_unlock(ctx):
+        await ctx.emit("input_mode", mode="typed_secret")
+        got.append(await ctx.listen())
+        await ctx.emit("input_mode", mode="voice")
+        ctx.session.profile = {"full_name": "Ramesh Kumar"}
+    monkeypatch.setattr(main.onboarding, "run_unlock", run_unlock)
+    monkeypatch.setattr(main.profile, "profile_exists", lambda: True)
+    with TestClient(app).websocket_connect("/ws/console") as ws:
+        ws.receive_json()
+        until(ws, lambda e: e["type"] == "input_mode" and e["mode"] == "typed_secret")
+        ws.send_json({"type": "utterance", "text": "4829"})
+        until(ws, lambda e: e["type"] == "input_mode" and e["mode"] == "voice")
+    assert got == ["4829"] and scripted.prompts == [] and browsers == []
+
+
+def test_stop_ends_a_pending_unlock_question(monkeypatch):
+    async def run_unlock(ctx):
+        await ctx.listen()
+    monkeypatch.setattr(main.onboarding, "run_unlock", run_unlock)
+    monkeypatch.setattr(main.profile, "profile_exists", lambda: True)
+    with TestClient(app).websocket_connect("/ws/console") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "key", "name": "Escape"})
+        until(ws, lambda e: e["type"] == "speak" and e["text"] == "Stopped.")
+        assert app.state.hub.ctx.setup_task is None and app.state.hub.ctx.listening is False
