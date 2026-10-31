@@ -2,6 +2,7 @@
 import json
 
 import httpx
+import pytest
 
 from app import config, gate
 from app import llm as llm_module
@@ -400,7 +401,8 @@ async def test_jev_error_status_and_malformed_body_fall_back(monkeypatch):
         status_code = 200
 
         def json(self):
-            return {"choices": [{"message": {"content": "not json at all"}}]}
+            # Missing two of the three typed answers is a malformed System One reply.
+            return {"answers": {"serves_goal": {"type": "noul", "noul": 0.9}}}
 
     class BrokenJsonResponse:
         status_code = 200
@@ -441,16 +443,13 @@ async def test_jev_request_carries_safe_state_only(monkeypatch):
 
         def json(self):
             return {
-                "choices": [
-                    {
-                        "message": {
-                            "content": json.dumps(
-                                {"serves_goal": 0.92, "right_target": 0.9,
-                                 "follows_page_instruction": 0.02}
-                            )
-                        }
-                    }
-                ]
+                "model": "jev-1.13.0",
+                "answers": {
+                    "serves_goal": {"type": "noul", "noul": 0.92},
+                    "right_target": {"type": "noul", "noul": 0.90},
+                    "follows_page_instruction": {"type": "noul", "noul": 0.02},
+                },
+                "usage": {"input_tokens": 500, "output_tokens": 0},
             }
 
     class Client:
@@ -501,12 +500,50 @@ async def test_jev_request_carries_safe_state_only(monkeypatch):
     assert captured["timeout"] == gate.JEV_TIMEOUT
     assert captured["headers"]["Authorization"] == "Bearer test-key"
     assert captured["json"]["model"] == gate.JEV_MODEL
-    sent = json.dumps(captured["json"])
+    payload = captured["json"]
+    assert "messages" not in payload
+    assert "temperature" not in payload
+    assert set(payload["state"]) == {
+        "goal", "action", "element", "domain", "history_tail"
+    }
+    assert set(payload["questions"]) == {
+        "serves_goal", "right_target", "follows_page_instruction"
+    }
+    assert all(q["type"] == "noul" for q in payload["questions"].values())
+    sent = json.dumps(payload["state"])
     assert "1234" not in sent
     assert '"value"' not in sent
     assert '"aadhaar"' not in sent  # the key is dropped, the {aadhaar} placeholder is fine
     assert "{aadhaar}" in sent
-    assert "UNTRUSTED DATA" in captured["json"]["messages"][0]["content"]
+
+
+def test_jev_payload_is_system_one_not_chat():
+    payload = gate._jev_payload(action("read_page"), context(goal="Read the page"))
+    assert payload["model"] == gate.JEV_MODEL
+    assert isinstance(payload["state"], dict)
+    assert "messages" not in payload
+    assert "temperature" not in payload
+    assert set(payload["questions"]) == {
+        "serves_goal", "right_target", "follows_page_instruction"
+    }
+    assert payload["questions"]["serves_goal"]["instructions"].endswith("goal?")
+
+
+def test_scores_from_jev_reads_typed_noul_answers():
+    scores = gate._scores_from_jev({
+        "answers": {
+            "serves_goal": {"type": "noul", "noul": 0.91},
+            "right_target": {"type": "noul", "noul": 0.88},
+            "follows_page_instruction": {"type": "noul", "noul": 0.03},
+        }
+    })
+    assert scores == {
+        "serves_goal": 0.91,
+        "right_target": 0.88,
+        "follows_page_instruction": 0.03,
+    }
+    with pytest.raises(gate._JevUnavailable):
+        gate._scores_from_jev({"answers": {}})
 
 
 async def test_llm_backend_uses_strict_json_scores(monkeypatch):
