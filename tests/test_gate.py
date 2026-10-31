@@ -8,6 +8,12 @@ from app import config, gate
 from app import llm as llm_module
 
 
+@pytest.fixture(autouse=True)
+def _rules_backend_by_default(monkeypatch):
+    """Keep the rules tests independent of a local .env with GATE_BACKEND=jev."""
+    monkeypatch.setattr(config, "GATE_BACKEND", "rules")
+
+
 def action(name: str, **args) -> dict:
     return {"name": name, "args": args}
 

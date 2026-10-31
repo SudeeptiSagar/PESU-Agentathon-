@@ -213,23 +213,39 @@ The gate never needs Jev to satisfy the safety guarantees. Jev is a semantic sec
 
 This is also the honest pitch: "Jev is a fast semantic check. The guarantees are the domain policy, the irreversible hold, the DOM verifier and the user's confirmation."
 
-## 9. Live status and the exact blocker
+## 9. Live status (verified) and credential notes
 
-At 21:43 IST the OpenCode Zen endpoint responded:
+The OpenCode console has three OpenCode Console credentials: `Personal`, `Default` and an API key. The API-key entries are expired. The `Default` OpenCode Console OAuth access token returned HTTP 200 from Jev:
 
 ```
-POST https://opencode.ai/zen/v1/systemone -> 401
-{"error":{"type":"authentication_error","code":"api_key_expired",
- "message":"This API key has expired. Create a new API key in OpenCode Console and replace it in your client or secret store. Signing in again will not renew this key."}}
+POST https://opencode.ai/zen/v1/systemone -> 200
+{"model":"jev-1.13-free",
+ "answers":{"serves_goal":{"type":"noul","noul":0.81}},
+ "usage":{"input_tokens":336,"output_tokens":22,"cost":0,
+          "opencode":{"billing_source":"free"}}}
 ```
 
-Both OpenCode auth entries on this machine are expired. The direct TypeSafe route has no key. Therefore:
+The live gate smoke test then passed in 1.4 seconds against `jev-1.13-free`. It navigated to the Kalpana Chawla article and returned `backend=jev`. No API key was created and nothing was paid.
 
-- `app/gate.py` is built and tested against a mocked response.
-- The live smoke test is `tests/e2e/jev_live_check.py` (added with JEV-05) and is skipped unless `JEV_API_KEY` is set.
-- To unblock: OpenCode Console -> API keys -> create a new key -> put `JEV_API_KEY=<key>` in the gitignored `.env`. Then run `python -m pytest tests/e2e/jev_live_check.py -q -k live`.
+What this means:
 
-Do not paste the key into a chat, an issue, a commit or the Console. It belongs only in `.env`.
+- `app/gate.py` is built against the real System One `state` + `questions` wire format, not an OpenAI chat shape.
+- The live smoke test is `tests/test_gate_live.py`. It skips unless `JEV_API_KEY` is set, so the normal suite stays offline.
+- To use Jev for the demo, put the OpenCode Console OAuth access token in the gitignored `.env` as `JEV_API_KEY` and set `GATE_BACKEND=jev`. The token used for the live check is valid until 20 Nov 2026. A fresh API key from OpenCode Console also works.
+- The token is a bearer credential. Never put it in chat, an issue, a commit, the Console or the audit log. `.env` is gitignored.
+- The direct TypeSafe route still has no key. It is not needed; the OpenCode Zen route works with the same System One shape.
+
+Live calibration observed on 31 Oct 2026 with `jev-1.13-free`:
+
+| Action | Scores (serves / target / injection) | Decision at 0.85 |
+|---|---|---|
+| navigate to the Wikipedia article | 0.94 / 1.00 / 0.15 | proceed (0.94) |
+| click a matching search result, with page summary | 0.95 / 0.88 / 0.10 | proceed (0.88) |
+| same click, without page summary | 0.91 / 0.76 / 0.14 | ask_user (0.76) |
+| unrelated profile fill | 0.29 / 0.12 / 0.31 | block (0.12) |
+| read-only / go_back | no call | rules proceed |
+
+The optional `page` key in the gate context (a title or one-line summary) materially improves goal fit. M1's agent loop should pass it when it has one. Read-only actions and `go_back` skip the semantic call because Jev has no target to judge and otherwise creates false asks. Injection is a separate hard block at 0.5; a low injection probability no longer shaves the action score.
 
 ## 10. Privacy and prompt-injection rules for the Jev state
 
@@ -253,9 +269,13 @@ Do not paste the key into a chat, an issue, a commit or the Console. It belongs 
 - unknown tool -> block
 - literal value in `fill_field` -> block
 - high/mid/low Jev scores -> proceed/ask_user/block
-- page-injection score high -> block
+- page-injection score high -> block; low injection does not penalize goal fit
 - rules `ask_user` cannot be overridden by a Jev 1.0
 - missing key and HTTP failure -> rules fallback, no crash
 - `GATE_BACKEND` switch across rules/jev/llm
+- the request is `state` + `questions` (no `messages`/`temperature`); `navigate`
+  asks only goal and injection; `click`/`fill_field` also ask the target question
 
-The live probe is intentionally separate so the main suite never depends on a secret or a network call.
+`tests/test_gate_live.py` is the network smoke test. It is skipped unless
+`JEV_API_KEY` is set, so the main suite never depends on a secret or a network call.
+It passed against `jev-1.13-free` on 31 Oct 2026.

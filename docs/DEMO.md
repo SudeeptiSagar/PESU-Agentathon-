@@ -216,7 +216,7 @@ Run this on the demo machine, in this order. Times are relative to going on stag
 | 14 | `SEARCH_URL` | Default search, or the mock search URL | Contains `{q}` or the app refuses to start |
 | 15 | `STT_BACKEND` | `handy` (or `whisper` if that is what was tested) | Must match what the machine actually runs |
 | 16 | `TTS_BACKEND` | `piper` with a valid `PIPER_VOICE` path, else `browser` | A missing `.onnx` file fails at the worst moment |
-| 17 | `GATE_BACKEND` | `rules`, `llm` or `jev`, whichever was tested | Say the live backend in Q&A; do not imply Jev runs if it does not |
+| 17 | `GATE_BACKEND` | `jev` (live-tested with `jev-1.13-free`), with `rules` as the offline fallback | Say the live backend in Q&A; `JEV_API_KEY` belongs only in the gitignored `.env` |
 | 18 | `GATE_PROCEED`, `GATE_ASK` | `0.85`, `0.5` unless tuned and recorded | Do not tune thresholds on stage |
 | 19 | `MAX_STEPS`, `MAX_FAILURES` | `30`, `2` | The loop must stop, not spin |
 | 20 | `BLOCKED_DOMAINS` | The intended list for the demo | An empty list is a policy gap, not a feature |
@@ -284,7 +284,7 @@ Speech recognition, speech output and the model run on hardware we control, not 
 No, and we never will. Those are human-only steps. The agent detects them, saves its state, says what is needed, waits for "done", re-checks, and resumes. Payment details are the same: the agent stops and hands over. That is a product rule, not a limitation we are working around.
 
 **4. What is Jev, and is it the safety guarantee?**
-Jev is a fast semantic check: does this action serve the user's stated goal, and is this the right field for this value? Its probability is not independent proof, so it is not the guarantee. The guarantees are the deterministic layers: the domain policy, the irreversible hold, the verifier and the user's confirmation. The gate backend is switchable, and we will tell you which one is running today.
+Jev is a fast semantic check: does this action serve the user's stated goal, and is this the right field for this value? Its probability is not independent proof, so it is not the guarantee. The guarantees are the deterministic layers: the domain policy, the irreversible hold, the verifier and the user's confirmation. The gate backend is switchable. Today it is `jev` live, with the rules layer as the fail-safe if the key or network is missing.
 
 **5. Why not use browser-use or an existing agentic browser?**
 Because the safety checks have to sit in the action path. We wrote our own Playwright tool layer so a click can be held, a value can be checked against the real DOM, and a tool the model can call to submit simply does not exist. Existing agents are built for sighted users who can watch and correct them; our user cannot see a wrong click. We are not claiming better general browsing, only a safer path for this user.
@@ -406,7 +406,7 @@ Evidence line: "Read, act, trust: the third one is the product."
 
 - Tasks B and C run on our mock portal and mock shop
 - Task A runs on the real web when the venue network allows; otherwise a mock mirror
-- Jev is a semantic layer, not the guarantee; the backend may be rules today
+- Jev is a semantic layer, not the guarantee; it is live-tested, with rules as the fail-safe
 - No payments, no passwords, no CAPTCHA bypass, no real government submission
 - Timings and pass rates will come from rehearsal; none are claimed today
 - Task D, reading Gmail in the user's own Chrome, is a stretch and is not claimed unless it runs
