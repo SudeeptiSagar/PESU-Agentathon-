@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Message - MockMail</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="inbox.html">MockMail</a>
+    <span class="muted">ramesh@example.com</span>
+  </header>
+  <main>
+    <p><a href="inbox.html" id="back-inbox">Back to inbox</a></p>
+    <p id="missing" hidden>This message does not exist or was deleted.</p>
+    <article id="message" hidden>
+      <div class="message-head">
+        <h1 id="subject"></h1>
+        <p>From: <strong id="from"></strong> <span class="muted" id="from-email"></span></p>
+        <p class="muted">To: ramesh@example.com &middot; <span id="date"></span></p>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="reply-btn">Reply</button>
+        <button type="button" class="secondary" id="forward-btn">Forward</button>
+        <button type="button" class="secondary" id="delete-btn">Delete</button>
+      </div>
+      <div class="message-body" id="body"></div>
+      <form id="reply-form" hidden>
+        <div class="field">
+          <label for="reply-text">Your reply</label>
+          <textarea id="reply-text" rows="4"></textarea>
+        </div>
+        <button type="submit" id="send-btn">Send</button>
+        <p id="sent" role="status"></p>
+      </form>
+    </article>
+  </main>
+  <script src="mail.js"></script>
+  <script>
+    (function () {
+      var id = Number(new URLSearchParams(location.search).get("id"));
+      var m = Mail.get(id);
+      if (!m) { document.getElementById("missing").hidden = false; return; }
+      document.title = m.subject + " - MockMail";
+      document.getElementById("subject").textContent = m.subject;
+      document.getElementById("from").textContent = m.from;
+      document.getElementById("from-email").textContent = "<" + m.email + ">";
+      document.getElementById("date").textContent = m.date;
+      document.getElementById("body").textContent = m.body;
+      document.getElementById("message").hidden = false;
+
+      document.getElementById("reply-btn").addEventListener("click", function () {
+        document.getElementById("reply-form").hidden = false;
+        document.getElementById("reply-text").focus();
+      });
+      document.getElementById("forward-btn").addEventListener("click", function () {
+        alert("Forward is not available in the mock mailbox.");
+      });
+      document.getElementById("reply-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        document.getElementById("sent").textContent = "Reply sent (mock, nothing left this computer).";
+      });
+      document.getElementById("delete-btn").addEventListener("click", function () {
+        Mail.remove(m.id);
+        location.href = "inbox.html";
+      });
+    })();
+  </script>
+</body>
+</html>
