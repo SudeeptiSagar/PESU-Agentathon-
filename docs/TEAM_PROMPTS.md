@@ -102,8 +102,9 @@ Next: BRW-09 (mock_site/web/: search results page reading ?q=, an article page, 
 checkout payment page), then BRW-03 (perception snapshot + main_text) and BRW-08 (flag every
 irreversible button with `irreversible` and `kind`).
 
-Stretch (Task D, PRD 3.1): BRW-07 is now P1. Attach to the user's own Chrome over CDP so the agent can open their Gmail
-and read the newest message (read-only), and add a mock inbox and message page to mock_site/web/. See issue #33.
+BRW-07 (PRD 3.2, issue #33) is your main ticket after BRW-08: BROWSER_MODE=chrome starts the installed Chrome with a saved
+agent profile and attaches over CDP, so the user signs in to Gmail once and stays signed in. Prove login persistence first;
+BROWSER_MODE=chromium stays the fallback. Prashanth will send you the full prompt for it.
 ```
 
 ## M4, Abishek: Jev, verification and demo (first: JEV-01, then JEV-02, JEV-03, JEV-04)
