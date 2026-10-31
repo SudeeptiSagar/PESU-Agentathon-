@@ -4,6 +4,8 @@ import CrystalizedBall from "./src/components/CrystalizedBall.jsx";
 import "./console.css";
 
 const REDACTED_INPUT = "Sensitive entry sent";
+const BROWSER_TTS_ENABLED =
+  String(import.meta.env.VITE_TTS_BACKEND || "browser").toLowerCase() === "browser";
 const COLORS = {
   ready: { preset: "frost", color: "#9bbcff" },
   listening: { preset: "aurora", color: "#65f4d8" },
@@ -207,7 +209,17 @@ function AssistantOrb() {
       case "speak":
         if (event.text) {
           setStatus({ phase: "answering", label: "Answering" });
-          setAnnouncement(event.text);
+          if (
+            BROWSER_TTS_ENABLED &&
+            "speechSynthesis" in window &&
+            typeof SpeechSynthesisUtterance === "function"
+          ) {
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(event.text));
+            setAnnouncement("Answering");
+          } else {
+            setAnnouncement(event.text);
+          }
           setTranscript((current) => [...current, { role: "assistant", text: event.text }].slice(-12));
         }
         break;
@@ -270,6 +282,7 @@ function AssistantOrb() {
   }, [draft, connection, sendDraft]);
 
   const sendKey = useCallback((name) => {
+    if (name === "Escape") window.speechSynthesis?.cancel();
     if (!send({ type: "key", name })) {
       setAnnouncement("Console reconnecting. The command was not sent.");
       return;
