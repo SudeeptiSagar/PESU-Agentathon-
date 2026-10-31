@@ -6,6 +6,10 @@ Hard rule 4: Aadhaar, bank account, IFSC and the unlock PIN are masked to the la
 four characters and never appear raw. `pin_code` is a POSTAL code, not a secret: it
 is spoken digit by digit and never masked, so the demo's truncated PIN-code trap is
 audible.
+
+The read-back only ever speaks values read from the page. An expected field with no
+actual value is spoken as "not checked", never as the expected value: echoing what
+was meant to be typed would confirm the very mistake this module exists to catch.
 """
 import json
 import re
@@ -17,6 +21,11 @@ from app import config
 
 #: Last chunk of every read-back. CORE-12 turns "confirm" into commit_pending.
 CONFIRM_INSTRUCTION = "Say confirm to go ahead, or say change followed by the field name."
+
+#: Spoken for an expected field with no actual page value. Never fall back to the
+#: expected value: a read-back that echoes what was meant to be typed would confirm
+#: the very mistake (a truncated PIN code, say) that it exists to catch.
+NOT_CHECKED = "not checked"
 
 _MONTHS = ("January", "February", "March", "April", "May", "June", "July",
            "August", "September", "October", "November", "December")
@@ -32,19 +41,28 @@ _NAMED_DATE = re.compile(r"^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$")
 
 
 def build_readback(session, actual_values: dict) -> list[str]:
-    """Spoken chunks "Label: value", digits separated, sensitive values masked."""
+    """Spoken chunks "Label: value", digits separated, sensitive values masked.
+
+    A field with no actual value supplied is spoken as "Label: not checked." and never
+    falls back to the expected value, so the read-back can never vouch for a value that
+    was not read from the page.
+    """
     expected = getattr(session, "expected", None) or {}
     actual = actual_values if isinstance(actual_values, dict) else {}
 
     chunks: list[str] = []
     for field_id, raw_meta in expected.items():
         meta = raw_meta if isinstance(raw_meta, dict) else {}
-        value = _lookup(actual, field_id, meta.get("value"))
+        label = meta.get("label") or field_id
+        found, value = _lookup(actual, field_id)
+        if not found:
+            chunks.append(_sentence(label, NOT_CHECKED))
+            continue
         if _sensitive_key(field_id, meta):
             spoken = _masked(value)
         else:
             spoken = _formatted(field_id, meta, value)
-        chunks.append(_sentence(meta.get("label") or field_id, spoken))
+        chunks.append(_sentence(label, spoken))
     chunks.append(CONFIRM_INSTRUCTION)
     return chunks
 
@@ -65,24 +83,30 @@ def describe_pending(session) -> str:
 
 # ---------------------------------------------------------------- input values
 
-def _lookup(actual_values: dict, field_id, fallback):
-    """Real page value for field_id, accepting raw or {"value": ...}/{"actual": ...}."""
+def _lookup(actual_values: dict, field_id) -> tuple[bool, object]:
+    """(found, value) for field_id in the actual page values.
+
+    found is False when no actual value was supplied for the field: the entry is
+    absent, holds None, or is a record without "actual"/"value". The caller speaks
+    "not checked" for that field; there is no fallback to the expected value.
+    """
     try:
         present = field_id in actual_values
     except TypeError:
         present = False
-    if present:
-        value = actual_values[field_id]
-        if isinstance(value, dict):
-            for key in ("actual", "value"):
-                if key in value:
-                    value = value[key]
-                    break
-            else:
-                value = None
-        if value is not None:
-            return value
-    return fallback
+    if not present:
+        return False, None
+    value = actual_values[field_id]
+    if isinstance(value, dict):
+        for key in ("actual", "value"):
+            if key in value:
+                value = value[key]
+                break
+        else:
+            return False, None
+    if value is None:
+        return False, None
+    return True, value
 
 
 def _collapse(value) -> str:

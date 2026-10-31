@@ -31,10 +31,46 @@ def test_actual_value_accepts_value_and_actual_shapes():
     assert build_readback(session, {"full_name": {"actual": "Ramesh A."}})[0] == "Full name: Ramesh A."
 
 
-def test_expected_value_is_the_fallback():
+def test_missing_actual_is_not_checked_and_never_the_expected_value():
+    session = _session({"pin_code": _field("PIN code", "560001",
+                                           source="profile:pin_code")})
+    chunks = build_readback(session, {})
+    assert chunks == ["PIN code: not checked.", FINAL]
+    joined = " ".join(chunks)
+    assert "5 6 0 0 0 1" not in joined
+    assert "560001" not in joined
+
+
+def test_none_actual_is_not_checked():
     session = _session({"full_name": _field("Full name", "Ramesh Kumar")})
-    assert build_readback(session, {})[0] == "Full name: Ramesh Kumar."
-    assert build_readback(session, {"full_name": None})[0] == "Full name: Ramesh Kumar."
+    for actual in ({"full_name": None}, {"full_name": {"value": None}},
+                   {"full_name": {"actual": None}}, {"full_name": {}}):
+        assert build_readback(session, actual)[0] == "Full name: not checked."
+
+
+def test_non_dict_actual_values_is_not_checked():
+    session = _session({"full_name": _field("Full name", "Ramesh Kumar")})
+    assert build_readback(session, None)[0] == "Full name: not checked."
+
+
+def test_missing_sensitive_actual_is_not_checked():
+    session = _session({"aadhaar": _field("Aadhaar", "1234 5678 9012",
+                                          source="profile:aadhaar")})
+    chunk = build_readback(session, {})[0]
+    assert chunk == "Aadhaar: not checked."
+    assert "ending" not in chunk
+    assert "9 0 1 2" not in chunk
+
+
+def test_truncated_actual_is_read_back_as_truncated():
+    # The trap: the page holds five of six digits, and the read-back must say so
+    # instead of echoing the six-digit expected value.
+    session = _session({"pin_code": _field("PIN code", "560001",
+                                           source="profile:pin_code")})
+    chunk = build_readback(session, {"pin_code": "56000"})[0]
+    assert chunk == "PIN code: 5 6 0 0 0."
+    assert "5 6 0 0 0 1" not in chunk
+    assert "560001" not in chunk
 
 
 def test_only_expected_fields_in_insertion_order():
@@ -43,7 +79,7 @@ def test_only_expected_fields_in_insertion_order():
         "city": _field("City", "Bengaluru", source="profile:city"),
     })
     chunks = build_readback(session, {"city": "Mysuru", "unknown": "ignored"})
-    assert chunks == ["Full name: Ramesh Kumar.", "City: Mysuru.", FINAL]
+    assert chunks == ["Full name: not checked.", "City: Mysuru.", FINAL]
 
 
 def test_final_instruction_is_exact_and_last():
@@ -124,6 +160,7 @@ def test_empty_value_is_spoken_as_empty():
     session = _session({"full_name": _field("Full name", "Ramesh Kumar")})
     assert build_readback(session, {"full_name": ""})[0] == "Full name is empty."
     assert build_readback(session, {"full_name": {"value": ""}})[0] == "Full name is empty."
+    assert "not checked" not in build_readback(session, {"full_name": ""})[0]
 
 
 def test_empty_sensitive_value_is_not_spoken_as_none():
