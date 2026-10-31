@@ -157,7 +157,8 @@ async def test_navigate_opens_a_spoken_site_name_and_announces_its_domain():
     heard, browser = [], Browser()
     ex = ToolExecutor(announce=heard.append)
     result = await ex.run({"name": "navigate", "args": {"target": "open my gmail"}}, Session(), browser)
-    assert result.startswith("ok:") and browser.visited == ["https://mail.google.com/mail/u/0/#inbox"]
+    gmail_url = next(site["url"] for site in _load_sites() if site["id"] == "gmail")   # M3 owns this address
+    assert result.startswith("ok:") and browser.visited == [gmail_url]
     assert heard == ["mail.google.com"]
 
 
