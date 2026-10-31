@@ -200,6 +200,9 @@ function AssistantOrb() {
         const next = statusFor(event.name);
         setStatus(next);
         setAnnouncement(next.label);
+        if (String(event.name).toUpperCase() === "IDLE" && BROWSER_TTS_ENABLED) {
+          window.speechSynthesis?.cancel();
+        }
         if (["IDLE", "DONE"].includes(String(event.name).toUpperCase()))
           setPending(null);
         if (["AWAITING_CONFIRM", "NEEDS_HUMAN_CHECK", "NEEDS_USER"].includes(String(event.name).toUpperCase()))
@@ -214,7 +217,6 @@ function AssistantOrb() {
             "speechSynthesis" in window &&
             typeof SpeechSynthesisUtterance === "function"
           ) {
-            window.speechSynthesis.cancel();
             window.speechSynthesis.speak(new SpeechSynthesisUtterance(event.text));
             setAnnouncement("Answering");
           } else {
@@ -264,6 +266,7 @@ function AssistantOrb() {
   const sendDraft = useCallback(() => {
     const text = draft.trim();
     if (!text) return;
+    if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
     if (!send({ type: "utterance", text })) {
       setAnnouncement("Reconnecting. Your request is still here.");
       return;
@@ -354,7 +357,6 @@ function AssistantOrb() {
         aria-label={inputMode === "typed_secret" ? "Sensitive entry" : "Task input"}
         aria-describedby="input-help"
         onChange={(event) => {
-          if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
           setDraft(event.target.value);
         }}
         onKeyDown={handleKeyDown}
