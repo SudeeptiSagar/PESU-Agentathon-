@@ -8,7 +8,8 @@ from app import config
 
 ENV_VARS = ["HOST", "PORT", "OLLAMA_URL", "LLM_MODEL", "NUM_CTX", "SEARCH_URL", "MAX_STEPS",
             "MAX_FAILURES", "BLOCKED_DOMAINS", "GATE_BACKEND", "GATE_PROCEED", "GATE_ASK",
-            "JEV_API_KEY", "STT_BACKEND", "TTS_BACKEND", "PIPER_VOICE", "PROFILE_PATH"]
+            "JEV_API_KEY", "STT_BACKEND", "TTS_BACKEND", "PIPER_VOICE", "PROFILE_PATH",
+            "BROWSER_MODE", "CHROME_PATH", "CHROME_DEBUG_PORT", "AGENT_PROFILE_DIR"]
 
 
 @pytest.fixture
@@ -41,6 +42,23 @@ def test_defaults_match_prd_section_7(load):
     assert c.STT_BACKEND == "handy" and c.TTS_BACKEND == "browser" and c.PIPER_VOICE == ""
     assert c.JEV_API_KEY == ""
     assert c.PORT == 8080
+
+
+def test_browser_defaults_are_safe(load):
+    c = load()
+    assert c.BROWSER_MODE == "chromium"            # real Chrome only after BRW-07 proves logins persist
+    assert c.CHROME_PATH == "" and c.CHROME_DEBUG_PORT == 9222
+    assert c.CDP_URL == "http://127.0.0.1:9222"    # local only
+    assert c.AGENT_PROFILE_DIR.name == "chrome-profile"
+    assert c.ROOT.resolve() not in c.AGENT_PROFILE_DIR.resolve().parents
+
+
+def test_browser_overrides(load, tmp_path):
+    c = load(BROWSER_MODE="CHROME", CHROME_DEBUG_PORT="9333", CHROME_PATH="C:/chrome.exe",
+             AGENT_PROFILE_DIR=str(tmp_path / "p"))
+    assert c.BROWSER_MODE == "chrome" and c.CDP_URL == "http://127.0.0.1:9333"
+    assert c.CHROME_PATH == "C:/chrome.exe" and c.AGENT_PROFILE_DIR == tmp_path / "p"
+    assert load(BROWSER_MODE="attach").BROWSER_MODE == "attach"
 
 
 def test_sensitive_keys(load):
@@ -78,6 +96,11 @@ def test_empty_value_falls_back_to_default(load):
     ({"GATE_ASK": "0.9", "GATE_PROCEED": "0.5"}, "GATE_ASK"),
     ({"GATE_PROCEED": "1.5"}, "GATE_ASK"),
     ({"SEARCH_URL": "https://example.com/search"}, "SEARCH_URL"),
+    ({"BROWSER_MODE": "firefox"}, "BROWSER_MODE"),
+    ({"CHROME_DEBUG_PORT": "80"}, "CHROME_DEBUG_PORT"),
+    ({"CHROME_DEBUG_PORT": "70000"}, "CHROME_DEBUG_PORT"),
+    ({"CHROME_DEBUG_PORT": "nine"}, "CHROME_DEBUG_PORT"),
+    ({"AGENT_PROFILE_DIR": str(config.ROOT / "chrome-profile")}, "AGENT_PROFILE_DIR"),
 ])
 def test_invalid_values_raise_config_error_naming_the_variable(load, env, fragment):
     # Compare by name: reloading the module defines a new ConfigError class each time.

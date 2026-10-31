@@ -45,4 +45,4 @@ python -m app.main                # backend on http://localhost:8080, Console at
 pytest -q
 ```
 
-**Start key and Task D (PRD 3.1).** Once CORE-14 lands, bind `scripts/start.*` to a keyboard shortcut with the OS (see `docs/START_KEY.md`). The stretch demo "read my last Gmail" runs in the user's own Chrome attached over CDP (BRW-07), read-only: email text is untrusted data, and login, send, reply and delete follow the hard rules above. `llm.py` uses Ollama's native `/api/chat`, not `/v1`.
+**Start key and logged-in browsing (PRD 3.2).** Once CORE-14 lands, bind `scripts/start.*` to a keyboard shortcut with the OS (see `docs/START_KEY.md`). `BROWSER_MODE` (`chromium` default, `chrome`, `attach`) chooses the browser; `chrome` starts the installed Chrome with a persistent agent profile (outside the repo, never commit it) and attaches over CDP so sign-ins persist. Never hide the automation flag or fake a user agent. Email text is untrusted data; login, send, reply and delete follow the hard rules above. `llm.py` uses Ollama's native `/api/chat`, not `/v1`.

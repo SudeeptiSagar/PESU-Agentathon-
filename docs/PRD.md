@@ -5,7 +5,7 @@
 | Event | Agentathon 2026, 24-hour hackathon |
 | Start | Sat 31 Oct 2026, 16:00 IST |
 | Assumed end | Sun 1 Nov 2026, 16:00 IST (confirm the real submission and demo time) |
-| Version | 3.1 (see "What changed in 3.1"); base 3.0 (final for build), 31 Oct 18:15 IST. Pivot from "government scheme applications" to "fully autonomous browser control" |
+| Version | 3.2 (see "What changed in 3.2"); base 3.1, 3.0 (final for build), 31 Oct 18:15 IST. Pivot from "government scheme applications" to "fully autonomous browser control" |
 | Repo | `github.com/SudeeptiSagar/PESU-Agentathon-` |
 | Lead | Prashanth (M1) |
 | Team | Prashanth (M1), Vishal (M2), Sudeepti (M3), Abishek (M4), see Section 13 |
@@ -13,10 +13,19 @@
 
 Read Sections 1 to 5 for the product, 10 for the safety rules, 12 for the code contract, 13 and 14 for your role, and 21 for the tickets (GitHub issues titled `[TICKET-ID] ...`).
 
+### What changed in 3.2
+
+- **Conversation, not a one-shot:** the user talks to the browser like an assistant. "Open Chrome": the agent opens the browser and says so. "Open Gmail": same browser, still open, same loop. "Read my last mail", "search for ...", "go to the second tab": each spoken sentence runs the loop again against the same browser and the same memory. The aim is that the user can do anything on the web by voice, except the deliberate stops: confirming irreversible actions, and passwords, CAPTCHA, OTP and payment, which are handed to the user.
+- **The logged-in browser is the main mode, not a stretch:** `BROWSER_MODE=chrome`. The backend starts the user's installed Chrome with remote debugging on 127.0.0.1 and a dedicated, persistent agent profile (`AGENT_PROFILE_DIR`, outside the repo), then Playwright attaches over CDP. The user signs in to Gmail and other sites by hand once; later sessions are already signed in, as in any Chrome profile. It is a separate profile, not the everyday one: Chrome restricts remote debugging on the default profile, and the reference repo used the same approach. This supersedes the 3.1 Task D paragraph.
+- **Proof first (BRW-07):** sign in once, close Chrome, reopen it through the agent, and confirm it is still signed in. Unverified assumption: that Google accepts the sign-in in a Chrome started this way. If the proof fails by CP4 (01:00), `BROWSER_MODE` stays `chromium`, demo tasks A, B and C are unaffected, and Task D goes back to being a stretch.
+- **Modes:** `chromium` (default: Playwright's own Chromium; tests and the offline demo), `chrome` (above), `attach` (use a Chrome that is already running with remote debugging). Settings: `BROWSER_MODE`, `CHROME_PATH`, `CHROME_DEBUG_PORT`, `AGENT_PROFILE_DIR` (Section 7).
+- **Risks accepted:** the agent profile holds live sign-ins (keep it outside the repo, never commit it); the debug port is local only; the Voice Console must sit in its own window of that same Chrome and keep focus (`scripts/focus_test.py` must pass in this mode); Google may ask the user to re-verify, which is a human step.
+- **Rules unchanged:** the agent never types passwords or codes; no evasion of bot protection (no hiding the automation flag, no fake user agent); email text is untrusted data; send, reply and delete are held for "confirm".
+
 ### What changed in 3.1
 
 - **Start key:** the app starts from one keyboard shortcut (CORE-14). The shortcut is an operating-system feature bound to a start script, because a key can only start the app if something is already listening for it. Once running, Handy's hold-to-talk key is the in-app key. A spoken wake word ("Hey Conduit") is **not** planned for the demo: it needs always-on listening, which Handy does not do, and a hotkey is more reliable on a noisy floor.
-- **Task D, stretch:** "open my Gmail and read me my last mail", read-only, in the user's own logged-in Chrome. Chosen approach: **attach to the user's Chrome over CDP** (BRW-07, raised from P2 to P1 stretch). Rejected for now: a separate agent profile (Google may refuse sign-ins in automated browsers, unverified) and the Gmail API (needs OAuth setup and is not browsing).
+- **Task D, stretch (superseded by 3.2, above):** "open my Gmail and read me my last mail", read-only, in the user's own logged-in Chrome. Chosen approach: **attach to the user's Chrome over CDP** (BRW-07, raised from P2 to P1 stretch). Rejected for now: a separate agent profile (Google may refuse sign-ins in automated browsers, unverified) and the Gmail API (needs OAuth setup and is not browsing).
 - **Rules for Task D:** a Google login page is a human-only step; email text is untrusted data, never instructions; send, reply and delete stay irreversible actions held for "confirm"; `mail.google.com` is `trusted: false` and no profile values are typed there.
 - **LLM:** `llm.py` calls Ollama's native `/api/chat`, not the OpenAI-compatible `/v1` endpoint, because `/v1` ignored `num_ctx` in the CORE-02 check (a 6000-token prompt was cut to 2050 tokens). Default model is `qwen3:8b`.
 
@@ -57,7 +66,7 @@ A fully autonomous, voice-controlled web browser for blind and visually impaired
 | G6 | Human hand-off for CAPTCHA, OTP, passwords and payment, never bypassed |
 | G7 | Local-first stack: Handy (speech recognition), Piper (speech output), Ollama (LLM) |
 | G8 | A planted mistake caught live in the demo |
-| G9 | Demo task D (stretch): read the newest email in the user's own logged-in Chrome, read-only |
+| G9 | Logged-in browsing: sign in to Gmail once in the agent's Chrome profile, later sessions open already signed in; read the newest email (Task D), read-only |
 
 ### Non-goals for this hackathon
 
@@ -116,7 +125,7 @@ A fully autonomous, voice-controlled web browser for blind and visually impaired
 | FR-17 | Multi-tab: follow and announce new tabs; switch and close tabs by voice | P1 | M3 |
 | FR-18 | Mock open-web pages (search results, article, shop with checkout) for an offline-safe demo | P1 | M3 |
 | FR-19 | Audit log (JSONL, no sensitive values) | P1 | M4 |
-| FR-20 | Attach to the user's own Chrome over CDP (needed for Task D) | P1 stretch | M3 |
+| FR-20 | Real Chrome with a persistent agent profile (`BROWSER_MODE=chrome`) or attach to a running Chrome (`attach`), over CDP | P0, proof by CP4 | M3 |
 | FR-21 | Start script and keyboard shortcut that bring the whole system up | P1 | M1 |
 
 ## 7. Architecture
@@ -181,6 +190,7 @@ pesu-agentathon/
 | Ollama | `OLLAMA_URL` (default `http://localhost:11434/v1`), `LLM_MODEL` (default `qwen3:8b`), `NUM_CTX=8192` |
 | Search | `SEARCH_URL` (default `https://html.duckduckgo.com/html/?q={q}`); `SEARCH_URL=http://localhost:8000/web/search.html?q={q}` for the offline demo |
 | Autonomy | `MAX_STEPS=30`, `MAX_FAILURES=2`, `BLOCKED_DOMAINS` (comma list) |
+| Browser | `BROWSER_MODE=chromium` (default) or `chrome` or `attach`; `CHROME_PATH` (empty = auto-detect), `CHROME_DEBUG_PORT=9222`, `AGENT_PROFILE_DIR=~/.voiceagent/chrome-profile` (outside the repo) |
 | Voice | `STT_BACKEND=handy` or `whisper`; `TTS_BACKEND=piper` or `browser`; `PIPER_VOICE=<path to .onnx>` |
 | Jev | `GATE_BACKEND=jev` or `llm` or `rules`, plus any key Jev needs (from M4's notes) |
 
@@ -227,7 +237,7 @@ Piper, played through sounddevice. Digits spoken separated ("9 8 7 6"). `interru
 
 ## 9. Backend reference
 
-**Reference repo:** `github.com/pascalLangdock/elevenlabs_hack`, which appears to be the backend of Wayfinder, a voice web-accessibility hackathon project. Its visible files are `requirements.txt` (browser-use, playwright, fastapi, uvicorn, langchain-openai, python-dotenv), `.env.example` (OpenAI and ElevenLabs keys) and a `backend/` folder. **We have not reviewed `backend/` yet, and no license was visible, so it is a design reference only. Do not copy its code.**
+**Reference repo:** `github.com/pascalLangdock/elevenlabs_hack`, which appears to be the backend of Wayfinder, a voice web-accessibility hackathon project. Its visible files are `requirements.txt` (browser-use, playwright, fastapi, uvicorn, langchain-openai, python-dotenv), `.env.example` (OpenAI and ElevenLabs keys) and a `backend/` folder. **`backend/` was reviewed in CORE-05 (see `docs/REFERENCE_NOTES.md`). The repo has no license, so it is a design reference only. Do not copy its code.**
 
 From the Wayfinder write-up: a FastAPI service is called by a cloud voice agent and starts a browser-use agent over Playwright, attached to the user's Chrome via CDP, capped at 5 steps, with a fresh agent per command and a spoken summary returned. That is the closest prior work to our new scope.
 
@@ -351,7 +361,11 @@ class Session:
     history: list; saved_state: str | None
 # states: IDLE, PLANNING, ACTING, VERIFYING, READBACK, AWAITING_CONFIRM, COMMITTING,
 #         DONE, PAUSED, NEEDS_USER, NEEDS_HUMAN_CHECK
-def transition(session: Session, new_state: str) -> None    # raises on an illegal transition
+def transition(session: Session, new_state: str) -> None    # raises IllegalTransition on an illegal transition
+# also: TRANSITIONS (allowed-moves table), can_transition(session, new_state) -> bool,
+#       confirm(session)  # backend command matcher only: AWAITING_CONFIRM -> COMMITTING
+#       resume(session) -> str  # leave PAUSED / NEEDS_HUMAN_CHECK, back to saved_state
+# Nobody else assigns session.state or sets confirmed=True (a test scans app/ for it). "stop" (IDLE) works from any state.
 
 # profile.py (M1)
 def profile_exists() -> bool
@@ -398,7 +412,7 @@ async def run_unlock(ctx) -> None                            # asks PIN, calls l
 
 # browser.py (M3)
 class BrowserController:
-    async def start(self) -> None                            # agent window + console window
+    async def start(self) -> None                            # agent window + console window; honours config.BROWSER_MODE (chromium | chrome | attach)
     async def goto(self, url: str) -> None
     active                                                   # current agent page (tab)
     console_page                                             # Voice Console page
@@ -576,7 +590,7 @@ Each issue has: title prefixed with the ticket ID (for example `[CORE-01]`), ass
 | Real sites change, block bots or are slow | Task A fails live | Mock open-web pages; `SEARCH_URL` switch; rehearse on the venue network | M3 |
 | Irreversible controls missed by keyword flags | Accidental submit | Flags from button text, form submit type and URL hints; gate double-checks; tests on every mock page | M3, M4 |
 | Prompt injection from web pages | Agent follows page text | Page text labelled untrusted; gate checks the action serves the user's goal; domain policy | M1, M4 |
-| Task D: Chrome attach fails or exposes the user's whole browser; Gmail page too heavy for perception | Stretch demo fails; agent can see every tab | Stretch only; test on the demo machine early; read-only; mock inbox page for offline tests and e2e | M3, M4 |
+| Logged-in Chrome (Task D): Google blocks the sign-in or asks to re-verify; the profile holds live sign-ins; the debug port gives full browser control; Console focus inside Chrome; Gmail page too heavy for perception | Logged-in browsing fails or leaks | Prove login persistence first (BRW-07); fall back to `chromium`; profile outside the repo; debug port bound to 127.0.0.1; the human does all verification; focus test in chrome mode; mock inbox for offline tests | M3, M1 |
 | Ollama's small default context | Model ignores rules | `num_ctx` 8192; capped snapshots; trimmed history; log `prompt_eval_count` | M1 |
 | Jev access or API unknown | No semantic gate | Report in 45 minutes; rules first; LLM backend fallback | M4 |
 | Reference repo unread, no visible license | Wrong assumptions, licensing | Study only, no copying; own tool layer | M1 |
@@ -652,7 +666,7 @@ Ticket IDs are stable; use them in branch names and PR titles. Owners: CORE = Pr
 | BRW-04 | `humancheck.py` | P0 | CP3 Modules | BRW-01 | Detects the fake check, OTP fields, password fields and the mock checkout payment page; silent on normal pages; reports when the challenge is gone |
 | BRW-05 | `sites.json` directory | P0 | CP3 Modules | BRW-01 | Entries for the mock portal, mock shop, mock search and 4 real sites (Wikipedia, a news site, a gov.in page, DuckDuckGo) with aliases, domain and trusted flag |
 | BRW-06 | Real-site tests | P1 | CP5 Full loop | BRW-03 | Snapshot and `main_text` on 3 real sites and the real search page; whether Playwright is blocked; findings and fallbacks in `docs/REAL_SITE_NOTES.md` |
-| BRW-07 | CDP attach to the user's Chrome | P1 stretch | Freeze and demo | BRW-02 | Optional mode connects to a running Chrome with the same `BrowserController` interface; launch steps that work on the demo machine documented (recent Chrome restricts remote debugging on the default profile); Task D works on the real Gmail inbox: open inbox, open newest message, `main_text` reads it; `gmail` and `my mail` aliases in `sites.json` with `trusted: false` |
+| BRW-07 | Logged-in Chrome: real Chrome with a persistent agent profile, or attach over CDP | P0 (fallback: stays `chromium`) | CP4 First end to end | BRW-02 | `BROWSER_MODE=chrome`: the backend starts the installed Chrome with remote debugging on 127.0.0.1 and `AGENT_PROFILE_DIR`, waits until it answers, and attaches over CDP with the same `BrowserController` interface; `attach` connects to a running Chrome; `chromium` stays the default fallback. **Proof first:** sign in to Gmail by hand once, close Chrome, reopen via the agent, still signed in (recorded in `docs/REAL_SITE_NOTES.md`). Agent tabs use the signed-in default context; the Voice Console is its own window of the same Chrome and `scripts/focus_test.py` passes in this mode. Task D on real Gmail: open inbox, open newest message, `main_text` reads it; `gmail` and `my mail` aliases in `sites.json`, `trusted: false`. No automation-hiding flags and no fake user agent |
 | BRW-08 | Irreversible-control flagging | P0 | CP3 Modules | BRW-03 | Every button and submit input gets `irreversible` and `kind` from text, form submit type and target hints (submit, pay, buy, place order, send, post, delete, accept); unit tests across all mock pages with no missed irreversible control |
 | BRW-09 | Mock open-web pages | P1 | CP4 First end to end | BRW-01 | `mock_site/web/`: search results page reading `?q=`, an article page, a shop with product list, cart and checkout (payment form for the hand-off); work with `SEARCH_URL` pointed at the mock search; also a mock inbox and message page for offline Task D tests |
 

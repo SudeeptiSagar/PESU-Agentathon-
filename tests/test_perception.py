@@ -17,7 +17,7 @@ from app.session import Session  # noqa: E402
 MOCK_SITE = Path(__file__).resolve().parent.parent / "mock_site"
 MOCK_PAGES = ["portal/index.html", "portal/apply.html", "portal/help.html", "portal/ack.html?ack=DPP-2026-1",
               "web/search.html?q=kalpana+chawla", "web/article.html", "web/shop.html", "web/cart.html",
-              "web/checkout.html", "web/order.html?order=AS-1&total=10", "web/inbox.html", "web/message.html?id=4"]
+              "web/checkout.html", "web/order.html?order=AS-1&total=10", "web/inbox.html", "web/message.html?id=4", "web/login.html", "web/otp.html"]
 FIELD_KEYS = {"id", "label", "type", "required", "value", "error", "sensitive_hint"}
 
 
@@ -212,7 +212,7 @@ async def test_main_text_on_form_page_is_not_empty(page, base):
     ("Send", "submit", None, (True, "send")),
     ("Delete", "button", None, (True, "delete")),
     ("I agree", "button", None, (True, "accept")),
-    ("Search", "submit", "get", (False, "other")),
+    ("Search", "submit", None, (False, "other")),
     ("Save", "submit", "post", (True, "submit")),
     ("Add to cart", "button", None, (False, "other")),
     ("Reply", "button", None, (False, "other")),

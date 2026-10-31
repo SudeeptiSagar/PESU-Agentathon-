@@ -1,5 +1,5 @@
 """Autonomous agent loop (PRD Sections 7 and 12). Owner: M1."""
-from app.session import Context
+from app.session import Context, transition
 
 
 async def handle_utterance(text: str, ctx: Context) -> None:
@@ -10,13 +10,13 @@ async def handle_utterance(text: str, ctx: Context) -> None:
 
 async def run_task(ctx: Context) -> None:
     """Run the current goal step by step, at most config.MAX_STEPS steps."""
-    # STUB: CORE-10
-    ctx.session.state = "DONE"
+    # STUB: CORE-10 (drive the loop with transition(), never by assigning session.state)
+    return None
 
 
 async def stop(ctx: Context) -> None:
     """Halt the agent loop within one step (hard rule 7)."""
     # STUB: CORE-10
-    ctx.session.state = "IDLE"
+    transition(ctx.session, "IDLE")
     await ctx.emit("state", name="IDLE")
     await ctx.say("Stopped.")
