@@ -31,6 +31,7 @@ def production_pages(tmp_path_factory):
 
     output = tmp_path_factory.mktemp("production-console")
     original_page = (CLIENT / "console.html").read_bytes() if (CLIENT / "console.html").exists() else None
+    original_dist = (main.DIST_DIR / "console.html").read_bytes() if (main.DIST_DIR / "console.html").exists() else None
     try:
         pages = {}
         for mode in ("browser", "piper"):
@@ -52,6 +53,8 @@ def production_pages(tmp_path_factory):
     finally:
         if original_page is not None:
             (CLIENT / "console.html").write_bytes(original_page)
+        if original_dist is not None:
+            (main.DIST_DIR / "console.html").write_bytes(original_dist)
 
 
 @pytest.fixture(scope="module")
@@ -65,8 +68,10 @@ def chromium() -> Browser:
 @pytest.fixture(scope="module", params=("browser", "piper"))
 def live_console(request, production_pages):
     """Serve the built page from the actual FastAPI /console and /ws/console routes."""
-    old_html = main.CONSOLE_HTML
+    dist_html = main.DIST_DIR / "console.html"
+    old_html = dist_html.read_bytes() if dist_html.exists() else None
     old_tts_backend = main.config.TTS_BACKEND
+    old_port = main.config.PORT
     old_handle = main.agent.handle_utterance
     old_stop = main.agent.stop
     page = production_pages[request.param]
@@ -90,7 +95,8 @@ def live_console(request, production_pages):
         stops.append(True)
         await ctx.say("Stopped.")
 
-    main.CONSOLE_HTML = page
+    dist_html.parent.mkdir(parents=True, exist_ok=True)
+    dist_html.write_bytes(page.read_bytes())
     main.config.TTS_BACKEND = "browser"
     main.agent.handle_utterance = handle_utterance
     main.agent.stop = stop
@@ -98,6 +104,7 @@ def live_console(request, production_pages):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
+    main.config.PORT = port
     server = uvicorn.Server(
         uvicorn.Config(main.app, host="127.0.0.1", port=port, log_level="error", lifespan="on")
     )
@@ -122,8 +129,12 @@ def live_console(request, production_pages):
 
     server.should_exit = True
     thread.join(timeout=5)
-    main.CONSOLE_HTML = old_html
+    if old_html is not None:
+        dist_html.write_bytes(old_html)
+    elif dist_html.exists():
+        dist_html.unlink()
     main.config.TTS_BACKEND = old_tts_backend
+    main.config.PORT = old_port
     main.agent.handle_utterance = old_handle
     main.agent.stop = old_stop
 

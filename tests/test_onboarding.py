@@ -28,6 +28,8 @@ class FakeContext:
 
 
 def test_onboarding_and_unlock_flow(tmp_path, monkeypatch):
+    import importlib
+    importlib.reload(onboarding)
     profile_file = tmp_path / "user_profile.enc"
     monkeypatch.setattr(config, "PROFILE_PATH", str(profile_file))
 
