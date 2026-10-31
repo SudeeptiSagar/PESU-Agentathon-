@@ -212,7 +212,7 @@ async def test_main_text_on_form_page_is_not_empty(page, base):
     ("Send", "submit", None, (True, "send")),
     ("Delete", "button", None, (True, "delete")),
     ("I agree", "button", None, (True, "accept")),
-    ("Search", "submit", "get", (False, "other")),
+    ("Search", "submit", None, (False, "other")),
     ("Save", "submit", "post", (True, "submit")),
     ("Add to cart", "button", None, (False, "other")),
     ("Reply", "button", None, (False, "other")),
