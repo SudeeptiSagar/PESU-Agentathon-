@@ -81,6 +81,24 @@ STT_BACKEND = _choice("STT_BACKEND", "handy", ("handy", "whisper"))
 TTS_BACKEND = _choice("TTS_BACKEND", "browser", ("piper", "browser"))
 PIPER_VOICE = _env("PIPER_VOICE", "")
 
+# Browser (BRW-02, BRW-07).
+#  chromium: Playwright's bundled Chromium, fresh each time (default; tests and the offline demo)
+#  chrome:   the backend starts the installed Chrome with remote debugging on 127.0.0.1 and a
+#            persistent agent profile, then attaches over CDP. Sign in to sites once; later
+#            sessions are already logged in.
+#  attach:   attach to a Chrome that is already running with remote debugging on.
+BROWSER_MODE = _choice("BROWSER_MODE", "chromium", ("chromium", "chrome", "attach"))
+CHROME_PATH = _env("CHROME_PATH", "")  # empty = auto-detect the installed Chrome
+CHROME_DEBUG_PORT = _int("CHROME_DEBUG_PORT", 9222, minimum=1024)
+if CHROME_DEBUG_PORT > 65535:
+    raise ConfigError(f"CHROME_DEBUG_PORT must be at most 65535, got {CHROME_DEBUG_PORT}")
+CDP_URL = f"http://127.0.0.1:{CHROME_DEBUG_PORT}"  # local only: the debug port controls the browser
+# Holds logged-in sessions, so it must never be inside the repo (it could be committed).
+AGENT_PROFILE_DIR = Path(_env("AGENT_PROFILE_DIR", str(Path.home() / ".voiceagent" / "chrome-profile")))
+_profile_dir = AGENT_PROFILE_DIR.resolve()
+if _profile_dir == ROOT.resolve() or ROOT.resolve() in _profile_dir.parents:
+    raise ConfigError("AGENT_PROFILE_DIR must be outside the repository")
+
 # Privacy (PRD Section 10, hard rule 4). "pin" is the app unlock PIN; the postal
 # code field is "pin_code" and is not sensitive.
 SENSITIVE_KEYS: frozenset[str] = frozenset({"aadhaar", "bank_account", "ifsc", "pin"})
