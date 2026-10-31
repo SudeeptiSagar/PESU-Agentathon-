@@ -12,14 +12,10 @@ the inbox (up to --wait-minutes). It prints only host names and yes/no checks, n
 """
 import argparse
 import asyncio
-import json
-import os
 import platform
-import shutil
 import subprocess
 import sys
 import time
-import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -29,50 +25,23 @@ sys.path.insert(0, str(ROOT))
 from playwright.async_api import async_playwright  # noqa: E402
 
 from app import config  # noqa: E402
-
-GMAIL = "https://mail.google.com/mail/u/0/#inbox"
-INSECURE_WARNING = "may not be secure"   # Google's "This browser or app may not be secure"
-
-
-def find_chrome() -> str | None:
-    """CHROME_PATH if set, else the usual install location for this OS."""
-    if config.CHROME_PATH:
-        return config.CHROME_PATH if Path(config.CHROME_PATH).is_file() else None
-    if sys.platform == "win32":
-        bases = [os.environ.get(v) for v in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
-        candidates = [Path(b) / "Google" / "Chrome" / "Application" / "chrome.exe" for b in bases if b]
-    elif sys.platform == "darwin":
-        candidates = [Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-                      Path.home() / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
-    else:
-        found = [shutil.which(n) for n in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")]
-        candidates = [Path(f) for f in found if f]
-    return next((str(c) for c in candidates if c.is_file()), None)
+from app.browser import cdp_version as _cdp_version, chrome_command as _chrome_command  # noqa: E402
+from app.browser import find_chrome, wait_for_cdp as _wait_for_cdp  # noqa: E402
 
 
 def chrome_command(chrome: str, url: str) -> list[str]:
-    # Remote debugging listens on loopback unless --remote-debugging-address is given; we never give it.
-    # Since Chrome 136 the port is ignored on the default profile, so a separate --user-data-dir is required.
-    return [chrome, f"--remote-debugging-port={config.CHROME_DEBUG_PORT}",
-            f"--user-data-dir={config.AGENT_PROFILE_DIR}", "--no-first-run", "--no-default-browser-check", url]
+    return _chrome_command(chrome, config.CHROME_DEBUG_PORT, config.AGENT_PROFILE_DIR, url)
 
 
 def cdp_version() -> dict | None:
-    try:
-        with urllib.request.urlopen(f"{config.CDP_URL}/json/version", timeout=1) as r:
-            return json.load(r)
-    except Exception:
-        return None
+    return _cdp_version(config.CDP_URL)
 
 
-def wait_for_cdp(seconds: float = 20) -> dict:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        info = cdp_version()
-        if info:
-            return info
-        time.sleep(0.3)
-    raise TimeoutError(f"Chrome did not answer on {config.CDP_URL} within {seconds:.0f} s")
+def wait_for_cdp() -> dict:
+    return _wait_for_cdp(config.CDP_URL)
+
+GMAIL = "https://mail.google.com/mail/u/0/#inbox"
+INSECURE_WARNING = "may not be secure"   # Google's "This browser or app may not be secure"
 
 
 def listening_addresses(port: int) -> list[str]:
