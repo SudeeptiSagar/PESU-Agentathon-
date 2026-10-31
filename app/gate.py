@@ -45,6 +45,15 @@ _REVERSIBLE = frozenset({"go_back", "type_text", "select_option", "close_tab", "
 _META = frozenset({"ask_user", "speak", "finish"})
 _SAFE_ACTIONS = _READ_ONLY | _REVERSIBLE | _META
 
+# Semantic checks only make sense for actions that change state or choose a target.
+# Read-only and meta actions cannot cause harm, and asking Jev about them produces
+# false blocks (there is no element to judge and no goal step to score).
+_SEMANTIC_ACTIONS = frozenset({
+    "navigate", "web_search", "click", "type_text", "fill_field",
+    "select_option", "press_key",
+})
+_TARGETED_ACTIONS = frozenset({"click", "type_text", "fill_field", "select_option", "press_key"})
+
 # The LLM has no such tools. Catch these names explicitly anyway: a second gate in
 # front of the executor is cheap, and these are exactly the hard-rule words.
 _FORBIDDEN_ACTIONS = frozenset({"submit", "commit", "pay", "place_order", "send", "delete"})
@@ -489,6 +498,11 @@ def _safe_state(action: dict, context: dict) -> dict:
         ),
         "history_tail": tail,
     }
+    # Optional observation supplied by the agent loop (page title or one-line summary).
+    # It helps Jev judge goal fit for a read/navigate step without shipping page text.
+    page = context.get("page") or context.get("page_summary") or context.get("observation")
+    if page:
+        state["page"] = _truncate(_redact(_as_text(page)), 300)
     return state
 
 
@@ -545,7 +559,9 @@ def _verdict(scores: Any, backend: str, risk: str) -> dict:
     if parsed is None:
         raise _ScoresMalformed
     serves, right, injection = parsed
-    p = max(0.0, min(1.0, min(serves, right, 1.0 - injection)))
+    # Injection is a separate hard risk: >= 0.5 blocks. A low injection probability
+    # should not shave every action score, which made normal navigation ask at 0.84.
+    p = max(0.0, min(1.0, min(serves, right)))
     detail = (
         f"serves_goal {serves:.2f}, right_target {right:.2f}, "
         f"injection {injection:.2f}"
@@ -600,31 +616,22 @@ def _parse_score_text(text: Any) -> dict | None:
     return parsed
 
 
-def _jev_questions() -> dict:
-    """The three typed questions Jev answers for one proposed action.
+def _jev_questions(action: dict | None = None) -> dict:
+    """The typed questions Jev answers for one proposed action.
 
+    `right_target` only makes sense when the action names an element or field. Asking
+    it for `navigate` or `web_search` produces a low score for a missing target, so
+    those actions ask only the goal and injection questions.
     `follows_page_instruction` is worded so a high probability is bad: it is the
     prompt-injection signal, not a safety score.
     """
-    return {
+    questions = {
         "serves_goal": {
             "type": "noul",
             "instructions": "Does the proposed action directly serve the user's stated goal?",
             "criteria": {
                 "true": "The action is a normal, relevant step toward the user's goal.",
                 "false": "The action is unrelated to the goal or does not advance it.",
-            },
-        },
-        "right_target": {
-            "type": "noul",
-            "instructions": (
-                "Is the proposed element or field the correct target for this action and value?"
-            ),
-            "criteria": {
-                "true": "The element label, field type and action agree with the value and the goal.",
-                "false": (
-                    "The element or field does not match the action or value, or is a different target."
-                ),
             },
         },
         "follows_page_instruction": {
@@ -642,6 +649,21 @@ def _jev_questions() -> dict:
             },
         },
     }
+    name = action.get("name") if isinstance(action, dict) else None
+    if name in _TARGETED_ACTIONS:
+        questions["right_target"] = {
+            "type": "noul",
+            "instructions": (
+                "Is the proposed element or field the correct target for this action and value?"
+            ),
+            "criteria": {
+                "true": "The element label, field type and action agree with the value and the goal.",
+                "false": (
+                    "The element or field does not match the action or value, or is a different target."
+                ),
+            },
+        }
+    return questions
 
 
 def _jev_payload(action: dict, context: dict) -> dict:
@@ -649,7 +671,7 @@ def _jev_payload(action: dict, context: dict) -> dict:
     return {
         "model": JEV_MODEL,
         "state": _safe_state(action, context),
-        "questions": _jev_questions(),
+        "questions": _jev_questions(action),
     }
 
 
@@ -663,6 +685,10 @@ def _scores_from_jev(data: Any) -> dict:
     scores: dict[str, float] = {}
     for key in ("serves_goal", "right_target", "follows_page_instruction"):
         answer = answers.get(key)
+        if key == "right_target" and answer is None:
+            # navigate/web_search do not ask this question; there is no bad target.
+            scores[key] = 1.0
+            continue
         if not isinstance(answer, dict):
             raise _JevUnavailable
         value = _to_score(answer.get("noul"))
@@ -748,6 +774,12 @@ async def check(action: dict, context: dict) -> dict:
 
     backend = str(getattr(config, "GATE_BACKEND", "rules") or "rules").strip().lower()
     if backend not in ("jev", "llm"):
+        return rules
+
+    name = action.get("name") if isinstance(action, dict) else None
+    if name not in _SEMANTIC_ACTIONS:
+        # Read-only, go_back, meta and unknown-but-allowed actions cannot change state
+        # in a harmful way; asking Jev about them only creates false asks.
         return rules
 
     try:
