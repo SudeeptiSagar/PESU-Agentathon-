@@ -257,7 +257,6 @@ _COMMAND_ALIASES = {
     "yes": "yes", "yeah": "yes", "yep": "yes", "yup": "yes",
     "no": "no", "nope": "no", "nah": "no",
     "confirm": "confirm", "confirm it": "confirm", "confirm this": "confirm",
-    "approve": "confirm", "proceed": "confirm",
     "back": "back", "go back": "back", "return": "back",
     "previous page": "back", "go to previous page": "back",
     "done": "done", "all done": "done", "finished": "done", "im done": "done",

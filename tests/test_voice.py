@@ -35,6 +35,13 @@ def test_match_command_covers_section_12_commands(utterance, expected):
 def test_match_command_requires_a_standalone_command_phrase(utterance):
     assert match_command(utterance) is None
 
+@pytest.mark.parametrize("utterance", ["proceed", "approve", "yes", "ok", "go ahead"])
+def test_match_command_never_maps_non_confirm_words_to_confirm(utterance):
+    result = match_command(utterance)
+    assert result != "confirm"
+    assert result in (None, "yes")
+
+
 
 def test_spoken_digits_separates_digit_runs_and_preserves_other_text():
     assert spoken_digits("Phone 9876, PIN 04") == "Phone 9 8 7 6, PIN 0 4"
