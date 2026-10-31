@@ -13,8 +13,8 @@ Written Sat 31 Oct 2026, about 18:30 IST, at the end of the planning session. Ow
 | `scripts/tickets.json` | 39 tickets generated from PRD Section 21, with assignees |
 | `scripts/create_issues.py` | Creates labels, milestones and assigned issues; safe to re-run |
 | GitHub issues | **Created.** Per-member umbrella issues #1 to #4 (M1 to M4) and 39 per-ticket issues #6 to #44 with labels, milestones and assignees. CORE-14 is added by the 3.1 docs PR |
-| Git | `main` is on GitHub. Open PRs, to merge in this order: #5 (CORE-01 skeleton) then #45 (CORE-02 `llm.py`, stacked on #5) then the 3.1 docs PR (stacked on #45). Change each PR's base to `main` after the one below it merges |
-| Code | CORE-01 skeleton (PR #5) and CORE-02 `llm.py` (PR #45) written and tested (38 tests). Everything else is a stub marked `# STUB: <ticket>` |
+| Git | `main` has the skeleton, `llm.py`, `config.py`, the reliability script and the 3.1 docs (PRs #5, #45, #47, #48, #49 merged). Check `gh pr list` for anything newer |
+| Code | CORE-01 to CORE-04 done (81 tests); `llm.py` and the model checked against a real `qwen3:8b`. CORE-05 notes are in `docs/REFERENCE_NOTES.md`. Everything else is a stub marked `# STUB: <ticket>`: session state machine, profile, tool executor, agent loop, and all of M2, M3 and M4's modules |
 
 ## 2. Team and tickets
 
@@ -30,19 +30,19 @@ All four usernames were checked as assignable on the repo.
 ## 3. Done in the first build session (31 Oct evening)
 
 - `main` pushed; per-member issues #1 to #4 and per-ticket issues #6 to #44 created.
-- PR #5 (CORE-01, `Closes #6`) and PR #45 (CORE-02, `Refs #7`) opened.
-- Real-Ollama check of `llm.py` with `qwen3:8b` on a teammate's laptop (`docs/OLLAMA_CHECK.md`, `scripts/check_llm.py`): reachable, plain reply and a real `fill_field` tool call passed; the `num_ctx` check failed on `/v1`. `llm.py` was switched to the native `/api/chat`. **The re-check is still pending.**
+- PRs #5 (CORE-01), #45 (CORE-02), #47 (docs 3.1), #48 (CORE-04) and #49 (CORE-03) merged; issues #6, #7, #8, #9 closed.
+- Real-Ollama check of `llm.py` with `qwen3:8b` on a teammate's laptop (`docs/OLLAMA_CHECK.md`, `scripts/check_llm.py`): reachable, plain reply and a real `fill_field` tool call passed; the `num_ctx` check failed on `/v1`. `llm.py` was switched to the native `/api/chat` and the re-check passed 5/5.
+- CORE-03 result (`qwen3:8b`, Ollama 0.32.14, Windows laptop): `fill_field` 10/10, `click` 10/10, about 1 to 2 s per call. Model choice: `qwen3:8b`. Details and caveats in `docs/LLM_RELIABILITY.md`.
 - Scope 3.1 added: start key (CORE-14) and the Task D stretch (see the PRD "What changed in 3.1").
 
 Tell the team: pull `main` after #5 merges, read the PRD "What changed in 3.0" and "3.1", and paste your block from `docs/TEAM_PROMPTS.md`.
 
 ## 4. Your next build steps (M1)
 
-1. Merge PR #5, then #45 (after the `num_ctx` re-check passes), then the 3.1 docs PR.
-2. CORE-04 review of `config.py`, CORE-03 reliability test (result due at **20:30, CP2**), CORE-05 reference notes.
-3. CORE-06 state machine, CORE-07 profile, CORE-08 executor and domain policy, CORE-09 site resolution (CP3, 23:00).
-4. CORE-10 agent loop, CORE-11 integration, CORE-12 confirmation flow (CP4, 01:00).
-5. CORE-14 start script and keyboard shortcut (CP5), CORE-13 final integration and freeze.
+1. Merge PR #50 (CORE-05 reference notes) if still open.
+2. CORE-06 state machine, CORE-07 profile, CORE-08 executor and domain policy, CORE-09 site resolution (CP3, 23:00). The hard rules (placeholders, irreversible hold, domain policy) are not enforced in code until CORE-08.
+3. CORE-10 agent loop, CORE-11 integration, CORE-12 confirmation flow (CP4, 01:00). Re-run `scripts/reliability_test.py` once CORE-10's real prompt exists.
+4. CORE-14 start script and keyboard shortcut (CP5), CORE-13 final integration and freeze.
 
 Checkpoints: CP1 19:30, CP2 20:30, CP3 23:00, CP4 01:00, CP5 04:00, freeze 11:00 Sunday.
 
@@ -67,7 +67,6 @@ Checkpoints: CP1 19:30, CP2 20:30, CP3 23:00, CP4 01:00, CP5 04:00, freeze 11:00
 - Which machine hosts Ollama, and can everyone reach it.
 - Venue network: are real sites and the search engine reachable (M3, by 20:30).
 - Does Chrome attach over CDP work on the demo machine, and do `snapshot` and `main_text` cope with the real Gmail page (M3, BRW-07)?
-- Re-run `scripts/check_llm.py` after the native-API change and post the output in #7 (the `num_ctx` check must pass).
 
 ## 7. Prompt for the fresh session
 
