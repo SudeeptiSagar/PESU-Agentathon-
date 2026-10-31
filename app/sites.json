@@ -23,6 +23,6 @@
    "url": "https://duckduckgo.com", "domain": "duckduckgo.com", "trusted": false,
    "notes": "Search results load in a headed browser; headless gets 403"},
   {"id": "gmail", "aliases": ["gmail", "my mail", "my email", "my inbox", "google mail"],
-   "url": "https://mail.google.com/mail/u/0/#inbox", "domain": "mail.google.com", "trusted": false,
+   "url": "https://mail.google.com", "domain": "mail.google.com", "trusted": false,
    "notes": "Task D, read-only. Signed out it redirects to accounts.google.com (human-only sign-in). Never type profile values here"}
 ]

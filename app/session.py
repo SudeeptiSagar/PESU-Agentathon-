@@ -2,8 +2,11 @@
 
 Owner: M1. Only this module's state machine may move to COMMITTING (hard rule 2).
 """
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
+
+log = logging.getLogger("app.session")
 
 STATES = (
     "IDLE", "PLANNING", "ACTING", "VERIFYING", "READBACK", "AWAITING_CONFIRM",
@@ -21,10 +24,15 @@ class Session:
     goal: str | None = None
     plan: list[str] = field(default_factory=list)
     progress: list[str] = field(default_factory=list)
-    profile: dict = field(default_factory=dict)
+    # profile and expected hold real values: repr=False so printing or logging a Session
+    # (or a failing assert showing one) can never reveal them (hard rule 4).
+    profile: dict = field(default_factory=dict, repr=False)
     approved_domains: set[str] = field(default_factory=set)
     locators: dict = field(default_factory=dict)
-    expected: dict = field(default_factory=dict)
+    expected: dict = field(default_factory=dict, repr=False)
+    # id -> {"kind","label",...} for the elements of the last snapshot, filled by
+    # tools.record_snapshot. The executor uses it to know which controls are irreversible.
+    elements: dict = field(default_factory=dict)
     pending_action: dict | None = None
     confirmed: bool = False
     failures: int = 0
@@ -153,6 +161,15 @@ class Context:
     send: Send
     browser: Any = None   # browser.BrowserController
     tts: Any = None       # voice.PiperTTS for audio; None when TTS_BACKEND=browser
+    # Set by main.py (CORE-11) so "open chrome" can start the browser on demand.
+    browser_factory: Callable[[], Any] | None = None
+    # Set and used by agent.py:
+    executor: Any = None              # tools.ToolExecutor, created on first use
+    task: Any = None                  # the asyncio.Task running agent.run_task, if any
+    last_spoken: str = ""             # for "repeat"
+    question: dict | None = None      # what the user was last asked: {"type": "answer"|"approve_domain"|"gate"|"continue", ...}
+    notes: list = field(default_factory=list)   # user answers and interjections for the LLM
+    approved_action: dict | None = None         # a gated action the user said yes to
 
     async def emit(self, type: str, **payload: Any) -> None:
         """Send {"type": type, **payload} to the Voice Console."""
@@ -163,6 +180,25 @@ class Context:
 
         With TTS_BACKEND=browser the Console voices the `speak` event itself.
         """
+        self.last_spoken = text
         await self.emit("speak", text=text)
         if self.tts is not None:
-            await self.tts.speak(text)
+            try:
+                await self.tts.speak(text)
+            except Exception as e:      # a broken voice must never stop the agent
+                log.warning("speech output failed: %s", type(e).__name__)
+                self.tts = None         # stop trying; the Console still shows (and may voice) every speak event
+                await self.emit("alert", level="warning",
+                                message="Speech output stopped working, so I will show text only.")
+            else:
+                await self.refocus()
+
+    async def refocus(self) -> None:
+        """Give the Voice Console the keyboard focus back (Handy pastes into it, PRD 8.3)."""
+        refocus = getattr(self.browser, "refocus_console", None)
+        if refocus is None:
+            return
+        try:
+            await refocus()
+        except Exception as e:
+            log.debug("refocus failed: %s", type(e).__name__)

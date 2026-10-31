@@ -190,7 +190,7 @@ pesu-agentathon/
 | Ollama | `OLLAMA_URL` (default `http://localhost:11434/v1`), `LLM_MODEL` (default `qwen3:8b`), `NUM_CTX=8192` |
 | Search | `SEARCH_URL` (default `https://html.duckduckgo.com/html/?q={q}`); `SEARCH_URL=http://localhost:8000/web/search.html?q={q}` for the offline demo |
 | Autonomy | `MAX_STEPS=30`, `MAX_FAILURES=2`, `BLOCKED_DOMAINS` (comma list) |
-| Browser | `BROWSER_MODE=chromium` (default) or `chrome` or `attach`; `CHROME_PATH` (empty = auto-detect), `CHROME_DEBUG_PORT=9222`, `AGENT_PROFILE_DIR=~/.voiceagent/chrome-profile` (outside the repo) |
+| Browser | `BROWSER_MODE=chromium` (default) or `chrome` or `attach`; `BROWSER_HEADLESS=false` (true = no windows, for automated tests); `CHROME_PATH` (empty = auto-detect), `CHROME_DEBUG_PORT=9222`, `AGENT_PROFILE_DIR=~/.voiceagent/chrome-profile` (outside the repo) |
 | Voice | `STT_BACKEND=handy` or `whisper`; `TTS_BACKEND=piper` or `browser`; `PIPER_VOICE=<path to .onnx>` |
 | Jev | `GATE_BACKEND=jev` or `llm` or `rules`, plus any key Jev needs (from M4's notes) |
 
@@ -357,6 +357,7 @@ async def llm(messages: list[dict], tools: list[dict] | None = None) -> dict
 class Session:
     state: str; goal: str | None; plan: list[str]; progress: list[str]
     profile: dict; approved_domains: set[str]; locators: dict; expected: dict
+    elements: dict   # id -> {kind,label,irreversible,...} of the last snapshot (tools.record_snapshot)
     pending_action: dict | None; confirmed: bool; failures: int
     history: list; saved_state: str | None
 # states: IDLE, PLANNING, ACTING, VERIFYING, READBACK, AWAITING_CONFIRM, COMMITTING,
@@ -385,13 +386,29 @@ TOOL_SCHEMAS: list[dict]
 #  ask_user(question)  speak(text)  finish(summary)
 #  -- NO submit or commit tool
 class ToolExecutor:
+    def __init__(self, announce=None)   # announce(domain) is called once per new domain
     async def run(self, action: dict, session: Session, browser) -> str   # short result, no raw sensitive values
-def resolve_target(target: str) -> dict                     # {"url","domain","site_id"|None,"trusted"}
+#  The first word of a result is its status: ok | error | blocked | needs_approval | needs_human | held |
+#  ask_user | speak | finish   (tools.parse_result). held = an irreversible control was stored as
+#  session.pending_action and NOT pressed. needs_approval = ask the user, then tools.approve_domain(), retry.
+#  The agent loop must call tools.take_snapshot (snapshot + record_snapshot) every step: the executor
+#  refuses ids that are not in the last snapshot, and clears them after any click or navigation.
+#  press_key accepts only Enter, Tab, Shift+Tab, Escape, arrows, PageUp/Down, Home, End, Space; Enter and
+#  Space are refused when they would submit a form or press an irreversible control.
+def resolve_target(target: str) -> dict                     # {"url","domain","site_id"|None,"trusted","kind"}
+#  kind: site (sites.json id/alias, filler words like "open the ... please" ignored) | url | domain
+#  | search (url is None: not a destination, the agent should use web_search). Non-web schemes,
+#  URLs with a username and bad ports are never resolved.
 def domain_allowed(domain: str) -> bool
-async def commit_pending(session: Session, browser) -> str  # state machine only, needs confirmed=True
+async def commit_pending(session: Session, browser) -> str  # state machine only: needs state COMMITTING, confirmed, pending_action; presses the stored selector once
 
 # agent.py (M1)
 async def handle_utterance(text: str, ctx) -> None          # entry point from main.py
+#  Returns quickly: commands (stop, pause, continue, repeat, where, help, confirm, done, back, yes, no) are
+#  handled in code first; anything else starts a task or is passed to the running one. The loop runs as a
+#  background asyncio task (ctx.task), so "stop" is never stuck behind a step. Only the word "confirm"
+#  presses a held action. Context gains: browser_factory (starts the browser on "open chrome" or the first
+#  task), executor, task, last_spoken, question, notes, approved_action.
 async def run_task(ctx) -> None                             # loop, max MAX_STEPS
 async def stop(ctx) -> None                                 # halts within one step
 
@@ -469,6 +486,8 @@ def log_event(kind: str, **fields) -> None                   # drops sensitive k
 | Backend → Console | `input_mode` | `{mode: "voice"|"typed_secret"}` (the Console hides typed secrets) |
 
 Only the backend's command matcher turns an utterance into a confirmation. The Console never sets `confirmed` itself.
+
+The backend serves the built Console (`cd client; npm ci; npm run build`, then `client/dist/console.html` at `/console` and `client/dist/assets/` at `/assets`; a placeholder page until it is built). All Console connections share one session, so reloading the Console never starts a second browser. `/ws/console` **refuses any browser `Origin` that is not the Console's own** (`localhost` or `127.0.0.1` on the backend port, or the Vite dev port 5173), so no web page open in the agent's browser can connect and send "confirm". Clients that send no Origin (tests, scripts) are accepted. `{type:"key", name:"Space"}` pauses a running task or continues a paused one.
 
 ## 13. Team roles
 

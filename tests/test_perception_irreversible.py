@@ -127,6 +127,10 @@ async def test_tricky_controls(page, html, expected):
 
 
 @pytest.mark.parametrize("html", [
+    # BRW-06, seen on socialjustice.gov.in: long notice links that merely mention "post" or "pay".
+    '<a href="/notice/42">CORRIGENDUM (Date extended for applications for the post of Consultant)</a>',
+    '<a href="/schemes/pms">Post Matric Scholarship for Scheduled Castes students</a>',
+    '<a href="/7cpc">Seventh Central Pay Commission orders and notifications</a>',
     '<a href="apply.html">Apply for disability pension</a>',
     '<a href="/terms">I agree to these terms (read)</a>',
     '<a href="/payments">Payment options</a>',
