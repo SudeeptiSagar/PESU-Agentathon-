@@ -361,7 +361,11 @@ class Session:
     history: list; saved_state: str | None
 # states: IDLE, PLANNING, ACTING, VERIFYING, READBACK, AWAITING_CONFIRM, COMMITTING,
 #         DONE, PAUSED, NEEDS_USER, NEEDS_HUMAN_CHECK
-def transition(session: Session, new_state: str) -> None    # raises on an illegal transition
+def transition(session: Session, new_state: str) -> None    # raises IllegalTransition on an illegal transition
+# also: TRANSITIONS (allowed-moves table), can_transition(session, new_state) -> bool,
+#       confirm(session)  # backend command matcher only: AWAITING_CONFIRM -> COMMITTING
+#       resume(session) -> str  # leave PAUSED / NEEDS_HUMAN_CHECK, back to saved_state
+# Nobody else assigns session.state or sets confirmed=True (a test scans app/ for it). "stop" (IDLE) works from any state.
 
 # profile.py (M1)
 def profile_exists() -> bool
