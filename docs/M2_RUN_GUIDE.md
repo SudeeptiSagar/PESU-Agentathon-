@@ -132,6 +132,7 @@ Handy installation and physical microphone/headset behavior have not been tested
 - React Bits TargetCursor and CursorGrid are included as source components. Live Playwright click highlighting is not connected because no browser target/coordinate event is available to the Console.
 - The Console is a web page. An always-on-top desktop window and OS-level refocus helper are not implemented.
 - CORE-14's OS startup-shortcut script is not present in the current default branch. Start the backend and Vite manually for this build.
+- NVDA is not installed on this host; screen-reader verification remains a manual check.
 - The Vite dev server must be run from `client`; the backend must be running at port 8080 for its WebSocket proxy to connect.
 
 ## G. Troubleshooting
@@ -146,3 +147,54 @@ Handy installation and physical microphone/headset behavior have not been tested
 - **Piper reports a missing model:** confirm `PIPER_VOICE` is the full path to the `.onnx` file and its downloaded `.onnx.json` sidecar is next to it.
 - **Piper imports fail or audio is silent:** install `piper-tts` and `sounddevice` in the same virtual environment used by `python -m app.main`; verify the Windows default output device and the model path. Physical audio has not been tested here.
 - **Handy paste goes elsewhere or is stale:** refocus the Console input before holding Handy's shortcut. See `SETUP.md` for Handy's paste troubleshooting and reliable-paste settings.
+
+## H. UI-03 NVDA verification (Windows)
+
+This host does not have NVDA installed, so these steps are instructions rather than a claimed test result. Install the current stable NVDA release from [NV Access](https://www.nvaccess.org/download/) or run `winget install --id NVAccess.NVDA`. Start NVDA from the Windows Start menu. The default NVDA modifier is `Insert`; NVDA can also be configured to use `Caps Lock`. The [NVDA User Guide](https://api.nvaccess.org/documentation/userGuide.html) documents these commands.
+
+1. Build with browser speech enabled and start FastAPI using sections B and D. Open **http://127.0.0.1:8080/console** in Chrome or Edge.
+2. Press `NVDA+Tab` (default: `Insert+Tab`). NVDA should identify the focused control as **Task input**. The input should regain focus after a blur.
+3. Type a harmless request such as `hello accessibility test` and press `Enter`. NVDA should announce the agent's `You said: ...` response from the **Agent messages** live log. The orb should change to its answering state.
+4. Press `Escape`. NVDA should announce **Stopped.** and the Console should return to its ready state.
+5. Press `Alt+I` to open the activity panel and again to close it. Check that the connection, transcript, steps, and any alerts are announced; `NVDA+Tab` should still report the task input as focused.
+6. In Windows **Settings → Accessibility → Contrast themes**, apply a high-contrast theme and confirm the activity text and keyboard focus indicator remain visible. Restore the previous theme after checking.
+
+Record the NVDA version, browser, whether each announcement was heard once, any focus loss, and any contrast issue. A clean NVDA run is required before marking UI-03's screen-reader acceptance complete.
+
+## I. First Handy voice check (safe stub)
+
+This verifies Handy paste, Console transport, and speech output with the current backend stub. It does not exercise autonomous browser actions or spoken command routing.
+
+1. Build the production Console with `$env:VITE_TTS_BACKEND = "browser"` and `npm run build` from `client`.
+2. In a second PowerShell at the repository root, run `$env:TTS_BACKEND = "browser"` and `python -m app.main`. If port 8080 is occupied, set `$env:PORT = "8081"` before starting and use port 8081 below.
+3. Open the matching FastAPI URL, `http://127.0.0.1:8080/console` (or `:8081/console`). Wait for the orb to indicate a connected Console.
+4. Start Handy, select its configured hold-to-talk key, and speak `hello from Handy`. Release the key and keep the Console window in front.
+5. Within about 900 ms, the Console should send the pasted transcript, show the answering state, and speak `You said: hello from Handy` through browser speech.
+6. Press `Escape` on the keyboard. The stub should emit and speak `Stopped.`. Do not use personal data for this check.
+
+For the first complete autonomous run, M1 must finish CORE-10/11 command routing and stop/interruption control. The current agent stub only echoes text. The production browser click overlay also needs a browser-side target interface from M3; no target event has been added to Section 12.
+
+## J. Full mock-site rehearsal (after CORE-10/11 integration)
+
+Use only the mock portal and its planted fake data. Do not enter real profile or banking information.
+
+1. Build the production Console, start FastAPI, and start Handy as described above. Start the mock site in another PowerShell window from the repository root with `python -m http.server 8000 --directory .\mock_site`.
+2. Start the integrated M1/M3 browser flow when CORE-10/11 is available. Open the agent browser on `http://127.0.0.1:8000/portal/apply.html` and keep the Console window available.
+3. With Handy, speak a simple reversible instruction such as `read the heading on the demo portal`. Verify the Console receives the utterance, shows the agent state and step, and speaks the response.
+4. During a longer response, speak a second harmless instruction. Verify the Console stops its current browser speech immediately and the backend begins the newer instruction.
+5. Ask the agent to perform one reversible mock-site action and verify the page changed as requested.
+6. Say `stop` during the task and verify the agent halts; also press `Escape` and verify the explicit Console stop key.
+7. Record the Handy transcript, Console events, browser result, interruption result, and stop result. Repeat only with fake data.
+
+As of this run, steps 1 and the Console/WebSocket echo path work. The current `app/agent.py` is still the CORE-10/11 echo stub, so steps 2–6 are a **not-yet-runnable procedure**, not a passing E2E result. M1 owns the missing command/task control path; M3 owns browser-side execution and focus. The separate M3 focus check is described in section K below.
+
+## K. Observed milestone checks (2026-10-31)
+
+- `npm run build`: passed with Vite 7.3.7; 95 modules transformed. The FastAPI page is self-contained.
+- `python -m pytest -q`: **143 passed, 1 skipped**, with one existing AnyIO/Pytest deprecation warning (24.09 s).
+- On `ui/UI-06-voice`, `python -m pytest -q tests/test_voice.py`: **22 passed**, with the same warning.
+- Chromium/Playwright against the production FastAPI page: **passed**. Verified WebSocket connection, 900 ms debounce, Enter submission, `speak` event playback callback, speech cancellation when new input arrives, activity panel, and reconnect after a backend restart.
+- A mock Section 12 WebSocket: **passed**. Verified `state`, `speak`, `step`, `field_table`, `pending`, `alert`, `input_mode`, plus Console `utterance` and Escape `key`; the sensitive input switched to password mode.
+- UI-03 browser accessibility check: **passed** for ARIA live log, Escape, Alt+I, retained input focus, 15 px transcript text, and Windows forced-colors styling.
+- M3 `scripts/focus_test.py` in headed mode could not launch Chromium here (`BrowserType.launch: spawn UNKNOWN`). A headless run of the same five mock controls with `refocus_console()` passed **5/5 page-focus checks**. OS foreground focus remains unverified.
+- NVDA and Handy were not available, and Piper/sounddevice/model playback was not available. Screen-reader, Handy/microphone, Piper audio, and OS-level window-focus checks remain manual. These results do not claim a hardware E2E pass.

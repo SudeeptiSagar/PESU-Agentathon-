@@ -183,12 +183,14 @@ function Activity({ steps, transcript, fields, pending, alerts, connection }) {
 
 function AssistantOrb() {
   const inputRef = useRef(null);
+  const messageSequenceRef = useRef(0);
   const [status, setStatus] = useState({ phase: "ready", label: "Ready" });
   const [draft, setDraft] = useState("");
   const [inputMode, setInputMode] = useState("voice");
   const [activityOpen, setActivityOpen] = useState(false);
   const [steps, setSteps] = useState([]);
   const [transcript, setTranscript] = useState([]);
+  const [agentMessages, setAgentMessages] = useState([]);
   const [fields, setFields] = useState([]);
   const [pending, setPending] = useState(null);
   const [alerts, setAlerts] = useState([]);
@@ -208,6 +210,7 @@ function AssistantOrb() {
       }
       case "speak":
         if (event.text) {
+          const messageId = messageSequenceRef.current++;
           setStatus({ phase: "answering", label: "Answering" });
           if (
             BROWSER_TTS_ENABLED &&
@@ -220,6 +223,7 @@ function AssistantOrb() {
           } else {
             setAnnouncement(event.text);
           }
+          setAgentMessages((current) => [...current, { id: messageId, text: event.text }].slice(-6));
           setTranscript((current) => [...current, { role: "assistant", text: event.text }].slice(-12));
         }
         break;
@@ -376,6 +380,16 @@ function AssistantOrb() {
         />
       )}
 
+      <ol
+        className="visually-hidden"
+        role="log"
+        aria-label="Agent messages"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-atomic="false"
+      >
+        {agentMessages.map((message) => <li key={message.id}>{message.text}</li>)}
+      </ol>
       <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {announcement}
       </div>

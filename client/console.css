@@ -157,7 +157,7 @@ input {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .connection-dot {
@@ -179,7 +179,7 @@ input {
 .activity-block h2 {
   margin: 0 0 8px;
   color: #cad5df;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -188,8 +188,8 @@ input {
 .activity-block p {
   margin: 0;
   color: #e7eef3;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.55;
 }
 
 .activity-pending {
@@ -202,6 +202,8 @@ input {
 .activity-alert {
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
+  font-size: 16px;
+  line-height: 1.55;
 }
 
 .activity-alert--error {
@@ -217,10 +219,10 @@ input {
 .field-row {
   display: grid;
   grid-template-columns: minmax(72px, 1fr) minmax(80px, 1fr) auto;
-  gap: 8px;
-  padding: 8px;
+  gap: 10px;
+  padding: 9px;
   color: #dbe5eb;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .field-row + .field-row {
@@ -235,7 +237,7 @@ input {
 .step-list,
 .transcript-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -244,15 +246,15 @@ input {
 .step-list li,
 .transcript-list li {
   display: grid;
-  gap: 3px;
-  color: #aebbc6;
-  font-size: 12px;
-  line-height: 1.45;
+  gap: 4px;
+  color: #d3dee7;
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 .step-list li span,
 .transcript-list li span {
-  color: #e3edf2;
+  color: #f3f7fa;
   font-weight: 600;
 }
 
