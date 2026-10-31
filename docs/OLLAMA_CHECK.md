@@ -15,7 +15,7 @@ pip install -r requirements.txt
 ollama pull qwen3:8b                 # skip if already installed; Ollama must be running
 cp .env.example .env                   # defaults: OLLAMA_URL=http://localhost:11434/v1, LLM_MODEL=qwen3:8b
 python scripts/check_llm.py
-pytest -q                              # should print 34 passed
+pytest -q                              # should print 38 passed
 ```
 
 If Ollama runs on another machine, set `OLLAMA_URL=http://<that-machine>:11434/v1` in `.env`.
@@ -38,8 +38,6 @@ It exits 1 if any check fails.
 Paste the full script output into issue #7 (CORE-02), plus the output of `ollama list`.
 
 - **All pass:** CORE-02 is verified; PR #45 can be merged after #5.
-- **`num_ctx honoured` fails:** the OpenAI-compatible endpoint is ignoring `NUM_CTX`. Do not change `llm.py`
-  yourself; tell Prashanth. The fix is a Modelfile with `PARAMETER num_ctx 8192` (then set `LLM_MODEL` to
-  the new name) or switching `llm.py` to Ollama's native `/api/chat`.
+- **`num_ctx honoured` fails:** `llm.py` now uses Ollama's native `/api/chat`, which takes `num_ctx` under `options`. If this still fails, send the output plus `ollama --version` to Prashanth and do not edit `llm.py` yourself.
 - **`tool call` fails:** note the printed output. The model may need a different tag; this feeds CORE-03.
 - **A connection error:** check that Ollama is running and the URL and firewall allow the request.

@@ -1,18 +1,18 @@
 """Single entry point to the language model (PRD Section 12). Owner: M1.
 
-Talks to Ollama's OpenAI-compatible endpoint. Swap the backend here (an API later)
-without touching callers. Message contents are never logged (hard rule 4).
+Talks to Ollama's native /api/chat, not the OpenAI-compatible /v1 endpoint: the /v1 endpoint
+ignored options.num_ctx in the CORE-02 check (prompt silently cut to 2048 tokens), while the
+native API takes num_ctx under "options". Swap the backend here (an API later) without
+touching callers. Message contents are never logged (hard rule 4).
 """
 import json
 import logging
 
-from openai import AsyncOpenAI
+import httpx
 
 from app import config
 
 log = logging.getLogger("app.llm")
-
-_client: AsyncOpenAI | None = None
 
 _RETRY_NOTE = (
     "Your last reply was not a valid tool call. Reply with exactly one call to one of the "
@@ -22,11 +22,33 @@ _JSON_TYPES = {"string": str, "integer": int, "number": (int, float), "boolean":
                "array": list, "object": dict}
 
 
-def _get_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(base_url=config.OLLAMA_URL, api_key="ollama", timeout=120.0)
-    return _client
+def _base_url() -> str:
+    """OLLAMA_URL may end in /v1 (OpenAI-style); the native API lives one level up."""
+    return config.OLLAMA_URL.rstrip("/").removesuffix("/v1")
+
+
+async def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
+    """POST one non-streaming request to /api/chat and return the response JSON."""
+    payload: dict = {
+        "model": config.LLM_MODEL,
+        "messages": messages,
+        "stream": False,
+        "think": False,  # no reasoning trace: faster steps, nothing extra to speak or parse
+        "options": {"temperature": 0, "num_ctx": config.NUM_CTX},
+    }
+    if tools:
+        payload["tools"] = tools
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.post(f"{_base_url()}/api/chat", json=payload)
+        if resp.status_code == 400 and "think" in resp.text.lower():
+            # Model without thinking support: repeat without the flag.
+            payload.pop("think")
+            resp = await client.post(f"{_base_url()}/api/chat", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+    log.info("llm prompt_tokens=%s completion_tokens=%s",
+             data.get("prompt_eval_count"), data.get("eval_count"))
+    return data
 
 
 def _validate(name: str, args, tools: list[dict]) -> str | None:
@@ -53,20 +75,23 @@ def _validate(name: str, args, tools: list[dict]) -> str | None:
     return None
 
 
-def _extract_call(message) -> tuple[str, object] | None:
+def _extract_call(message: dict) -> tuple[str, object] | None:
     """Pull (name, args) from a chat message; args may still be invalid.
 
     Handles the standard tool_calls field, and small models that write the call as JSON
     in the text instead.
     """
-    calls = getattr(message, "tool_calls", None)
+    calls = message.get("tool_calls")
     if calls:
-        fn = calls[0].function
-        try:
-            return fn.name, json.loads(fn.arguments or "{}")
-        except ValueError:
-            return fn.name, None
-    text = (message.content or "").strip()
+        fn = calls[0].get("function", {})
+        args = fn.get("arguments", {})
+        if isinstance(args, str):  # the native API sends an object; tolerate a string
+            try:
+                args = json.loads(args or "{}")
+            except ValueError:
+                args = None
+        return fn.get("name", ""), args
+    text = (message.get("content") or "").strip()
     if text.startswith("{"):
         try:
             obj = json.loads(text)
@@ -75,25 +100,6 @@ def _extract_call(message) -> tuple[str, object] | None:
         if isinstance(obj, dict) and "name" in obj:
             return obj["name"], obj.get("arguments", obj.get("args", {}))
     return None
-
-
-async def _call(messages: list[dict], tools: list[dict] | None):
-    kwargs = {
-        "model": config.LLM_MODEL,
-        "messages": messages,
-        "temperature": 0,
-        # Ollama reads num_ctx from options; see docs/REFERENCE_NOTES.md / CORE-03 results
-        # for whether this endpoint honours it on the installed Ollama version.
-        "extra_body": {"options": {"num_ctx": config.NUM_CTX}},
-    }
-    if tools:
-        kwargs["tools"] = tools
-    resp = await _get_client().chat.completions.create(**kwargs)
-    usage = getattr(resp, "usage", None)
-    if usage is not None:
-        log.info("llm prompt_tokens=%s completion_tokens=%s", usage.prompt_tokens,
-                 usage.completion_tokens)
-    return resp.choices[0].message
 
 
 async def llm(messages: list[dict], tools: list[dict] | None = None) -> dict:
@@ -106,21 +112,21 @@ async def llm(messages: list[dict], tools: list[dict] | None = None) -> dict:
     """
     msgs = list(messages)
     for attempt in (1, 2):
-        message = await _call(msgs, tools)
+        message = (await _chat(msgs, tools)).get("message", {})
+        content = message.get("content") or ""
         if not tools:
-            return {"text": message.content, "tool_call": None}
+            return {"text": content, "tool_call": None}
         found = _extract_call(message)
         if found is None:
             # Plain text with tools offered: accept it as an answer, no retry needed.
-            if (message.content or "").strip():
-                return {"text": message.content, "tool_call": None}
+            if content.strip():
+                return {"text": content, "tool_call": None}
             reason = "empty reply"
         else:
             name, args = found
             reason = _validate(name, args, tools)
             if reason is None:
-                return {"text": message.content or None,
-                        "tool_call": {"name": name, "args": args}}
+                return {"text": content or None, "tool_call": {"name": name, "args": args}}
         log.warning("llm malformed tool output (attempt %d): %s", attempt, reason)
         msgs = [*messages, {"role": "user", "content": f"{_RETRY_NOTE} Problem: {reason}."}]
     return {"text": None, "tool_call": None}

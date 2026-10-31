@@ -70,15 +70,13 @@ async def check_num_ctx() -> None:
     filler = "alpha bravo charlie delta echo foxtrot golf hotel india juliet. " * 500
     msgs = [{"role": "user", "content": f"{needle}\n{filler}\nWhat is the secret code? Answer with the code only."}]
     try:
-        resp = await llm_mod._get_client().chat.completions.create(
-            model=config.LLM_MODEL, messages=msgs, temperature=0,
-            extra_body={"options": {"num_ctx": config.NUM_CTX}})
-        used = resp.usage.prompt_tokens if resp.usage else 0
-        answer = resp.choices[0].message.content or ""
+        data = await llm_mod._chat(msgs)
+        used = data.get("prompt_eval_count", 0)
+        answer = data.get("message", {}).get("content") or ""
         ok = used > 4096 and "PINEAPPLE-42" in answer
         detail = f"NUM_CTX={config.NUM_CTX}, prompt_tokens={used}, needle recalled={'PINEAPPLE-42' in answer}"
         if not ok:
-            detail += " -> num_ctx looks IGNORED; use a Modelfile (PARAMETER num_ctx) or Ollama's native /api/chat"
+            detail += " -> num_ctx looks IGNORED; check the Ollama version (ollama --version) and report it"
         record("num_ctx honoured", ok, detail)
     except Exception as e:  # noqa: BLE001
         record("num_ctx honoured", False, f"{type(e).__name__}: {e}")
