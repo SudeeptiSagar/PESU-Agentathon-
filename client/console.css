@@ -54,6 +54,14 @@ input {
   --orb-tint: rgba(138, 107, 255, 0.2);
 }
 
+.orb-screen--acting {
+  --orb-tint: rgba(56, 189, 248, 0.22);
+}
+
+.orb-screen--stopped {
+  --orb-tint: rgba(148, 163, 184, 0.16);
+}
+
 .orb-screen--listening {
   --orb-tint: rgba(99, 247, 213, 0.2);
 }
@@ -374,4 +382,92 @@ input {
   .activity-panel:focus-visible {
     outline: 2px solid Highlight;
   }
+}
+
+/* Subtitle beneath floating crystalized ball */
+.orb-subtitle {
+  margin-top: 10px;
+  max-width: 260px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+  text-align: center;
+  line-height: 1.4;
+  word-break: break-word;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  z-index: 10;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+/* 100% Transparent Floating Overlay Mode */
+html.overlay-mode,
+body.overlay-mode,
+body.overlay-mode #root,
+body.overlay-mode .orb-screen,
+.orb-screen--overlay {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.overlay-mode {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body.overlay-mode .orb-screen {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  padding: 10px 4px !important;
+  overflow: visible !important;
+}
+
+body.overlay-mode .orb-button {
+  width: 200px !important;
+  height: 200px !important;
+  aspect-ratio: 1 !important;
+  flex-shrink: 0 !important;
+  animation: orb-float 6s ease-in-out infinite;
+}
+
+body.overlay-mode .orb-aura {
+  display: none !important;
+}
+
+body.overlay-mode .activity-panel {
+  display: none !important;
+}
+
+body.overlay-mode .capture-input,
+body.overlay-mode .capture-input--visible {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  clip: rect(0, 0, 0, 0) !important;
 }

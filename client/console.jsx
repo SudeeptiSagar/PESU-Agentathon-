@@ -3,6 +3,22 @@ import { createRoot } from "react-dom/client";
 import CrystalizedBall from "./src/components/CrystalizedBall.jsx";
 import "./console.css";
 
+// Polyfill Array.prototype.at for older Chromium / QtWebEngine compatibility
+if (!Array.prototype.at) {
+  Array.prototype.at = function (n) {
+    n = Math.trunc(n) || 0;
+    if (n < 0) n += this.length;
+    if (n < 0 || n >= this.length) return undefined;
+    return this[n];
+  };
+}
+
+const isOverlay =
+  typeof window !== "undefined" &&
+  (new URLSearchParams(window.location.search).get("overlay") === "1" ||
+    window.location.search.includes("overlay"));
+
+
 const REDACTED_INPUT = "Sensitive entry sent";
 const BROWSER_TTS_ENABLED =
   String(import.meta.env.VITE_TTS_BACKEND || "browser").toLowerCase() === "browser";
@@ -10,9 +26,11 @@ const COLORS = {
   ready: { preset: "frost", color: "#9bbcff" },
   listening: { preset: "aurora", color: "#65f4d8" },
   thinking: { preset: "nebula", color: "#9a83ff" },
+  acting: { preset: "aurora", color: "#38bdf8" },
   answering: { preset: "ember", color: "#ff9c76" },
   awaiting: { preset: "solar", color: "#ffd36e" },
   paused: { preset: "frost", color: "#b8dfff" },
+  stopped: { preset: "frost", color: "#94a3b8" },
   error: { preset: "ember", color: "#ff647c" },
 };
 
@@ -21,10 +39,11 @@ function statusFor(name) {
     case "LISTENING":
       return { phase: "listening", label: "Listening" };
     case "PLANNING":
-    case "ACTING":
     case "VERIFYING":
     case "COMMITTING":
       return { phase: "thinking", label: "Thinking" };
+    case "ACTING":
+      return { phase: "acting", label: "Acting in browser" };
     case "READBACK":
     case "DONE":
       return { phase: "answering", label: "Answering" };
@@ -37,6 +56,8 @@ function statusFor(name) {
       return { phase: "awaiting", label: "Needs your answer" };
     case "PAUSED":
       return { phase: "paused", label: "Paused" };
+    case "STOPPED":
+      return { phase: "stopped", label: "Stopped" };
     case "ERROR":
       return { phase: "error", label: "Needs attention" };
     default:
@@ -211,6 +232,13 @@ function AssistantOrb() {
   const [pending, setPending] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [announcement, setAnnouncement] = useState("Ready");
+  useEffect(() => {
+    if (isOverlay) {
+      document.documentElement.classList.add("overlay-mode");
+      document.body.classList.add("overlay-mode");
+    }
+  }, []);
+
   const suppressInitialFocusReveal = useRef(true);
   const browserTtsAvailable =
     BROWSER_TTS_ENABLED &&
@@ -244,7 +272,7 @@ function AssistantOrb() {
         break;
       case "step":
         setSteps((current) => [...current, event].slice(-24));
-        setStatus({ phase: "thinking", label: "Thinking" });
+        setStatus({ phase: "acting", label: "Acting in browser" });
         setAnnouncement("Working");
         break;
       case "field_table":
@@ -308,7 +336,13 @@ function AssistantOrb() {
       setAnnouncement("Console reconnecting. The command was not sent.");
       return;
     }
-    if (name === "Escape") setAnnouncement("Stop requested");
+    if (name === "Escape") {
+
+      setStatus({ phase: "stopped", label: "Stopped" });
+
+      setAnnouncement("Stop requested");
+
+    }
     if (name === "Space") setAnnouncement("Pause or continue requested");
   }, [send]);
 
@@ -357,7 +391,8 @@ function AssistantOrb() {
         : "reconnecting";
 
   return (
-    <main className={`orb-screen orb-screen--${phase}`} onKeyDown={handleMainKeyDown}>
+    <main className={`orb-screen orb-screen--${phase}${isOverlay ? " orb-screen--overlay" : ""}`}
+      onClick={() => inputRef.current?.focus({ preventScroll: true })} onKeyDown={handleMainKeyDown}>
       <input
         ref={inputRef}
         className={`capture-input${draft || inputExpanded || inputFocused ? " capture-input--visible" : ""}`}
@@ -388,21 +423,31 @@ function AssistantOrb() {
         aria-expanded={activityOpen}
         aria-controls="activity-panel"
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => setActivityOpen((open) => !open)}
+        onClick={() => {
+          inputRef.current?.focus({ preventScroll: true });
+          if (!isOverlay) setActivityOpen((open) => !open);
+        }}
       >
         <span className="orb-aura" aria-hidden="true" />
         <CrystalizedBall
           className="assistant-ball"
           preset={orb.preset}
           color={orb.color}
-          size={0.78}
+          size={isOverlay ? 0.72 : 0.78}
           particleCount={16000}
-          speed={phase === "thinking" ? 1.15 : 0.72}
+          speed={phase === "thinking" ? 1.15 : phase === "acting" ? 1.35 : 0.72}
           interactive={false}
           intro={false}
           paused={phase === "paused"}
         />
       </button>
+
+      <div className="orb-subtitle" aria-hidden="true">
+        {draft
+          ? (inputMode === "typed_secret" ? "••••••••" : draft)
+          : (pending?.description || (agentMessages.length > 0 ? agentMessages[agentMessages.length - 1].text : status.label))
+        }
+      </div>
 
       {activityOpen && (
         <Activity
@@ -429,7 +474,7 @@ function AssistantOrb() {
         {announcement}
       </div>
       <div className="visually-hidden" role="alert" aria-live="assertive" aria-atomic="true">
-        {alerts.at(-1)?.message || ""}
+        {(alerts.length ? alerts[alerts.length - 1]?.message : "") || ""}
       </div>
     </main>
   );
