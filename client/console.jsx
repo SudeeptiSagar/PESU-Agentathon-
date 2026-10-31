@@ -7,9 +7,9 @@ const REDACTED_INPUT = "Sensitive entry sent";
 const BROWSER_TTS_ENABLED =
   String(import.meta.env.VITE_TTS_BACKEND || "browser").toLowerCase() === "browser";
 const COLORS = {
-  ready: { preset: "frost", color: "#9bbcff" },
-  listening: { preset: "aurora", color: "#65f4d8" },
-  thinking: { preset: "nebula", color: "#9a83ff" },
+  ready: { preset: "frost", color: "#38bdf8" },
+  listening: { preset: "ember", color: "#f97316" },
+  thinking: { preset: "aurora", color: "#22c55e" },
   answering: { preset: "ember", color: "#ff9c76" },
   awaiting: { preset: "solar", color: "#ffd36e" },
   paused: { preset: "frost", color: "#b8dfff" },
@@ -279,10 +279,10 @@ function AssistantOrb() {
   }, [draft, inputMode, send]);
 
   useEffect(() => {
-    if (!draft.trim() || connection !== "connected") return undefined;
+    if (!draft.trim() || connection !== "connected" || inputMode === "typed_secret") return undefined;
     const timer = window.setTimeout(sendDraft, 900);
     return () => window.clearTimeout(timer);
-  }, [draft, connection, sendDraft]);
+  }, [draft, connection, inputMode, sendDraft]);
 
   const sendKey = useCallback((name) => {
     if (name === "Escape") window.speechSynthesis?.cancel();
@@ -297,6 +297,16 @@ function AssistantOrb() {
   useEffect(() => {
     inputRef.current?.focus({ preventScroll: true });
   }, [inputMode]);
+
+  useEffect(() => {
+    const handleFocus = () => inputRef.current?.focus({ preventScroll: true });
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("click", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("click", handleFocus);
+    };
+  }, []);
 
   const handleKeyDown = (event) => {
     if (event.key === "Escape") {
@@ -314,7 +324,7 @@ function AssistantOrb() {
     }
   };
 
-  const phase = connection === "connected" ? status.phase : "error";
+  const phase = draft.trim() ? "listening" : (connection === "connected" ? status.phase : "error");
   const orb = COLORS[phase] || COLORS.ready;
   const connectionLabel =
     connection === "connected"
