@@ -9,7 +9,7 @@ from app import config
 ENV_VARS = ["HOST", "PORT", "OLLAMA_URL", "LLM_MODEL", "NUM_CTX", "SEARCH_URL", "MAX_STEPS",
             "MAX_FAILURES", "BLOCKED_DOMAINS", "GATE_BACKEND", "GATE_PROCEED", "GATE_ASK",
             "JEV_API_KEY", "STT_BACKEND", "TTS_BACKEND", "PIPER_VOICE", "PROFILE_PATH",
-            "BROWSER_MODE", "CHROME_PATH", "CHROME_DEBUG_PORT", "AGENT_PROFILE_DIR"]
+            "BROWSER_MODE", "BROWSER_HEADLESS", "CHROME_PATH", "CHROME_DEBUG_PORT", "AGENT_PROFILE_DIR"]
 
 
 @pytest.fixture
@@ -61,6 +61,16 @@ def test_browser_overrides(load, tmp_path):
     assert load(BROWSER_MODE="attach").BROWSER_MODE == "attach"
 
 
+@pytest.mark.parametrize("raw,expected", [("true", True), ("1", True), ("YES", True), ("on", True),
+                                          ("false", False), ("0", False), ("no", False), ("off", False)])
+def test_browser_headless_flag(load, raw, expected):
+    assert load(BROWSER_HEADLESS=raw).BROWSER_HEADLESS is expected
+
+
+def test_browser_headless_defaults_to_visible_windows(load):
+    assert load().BROWSER_HEADLESS is False
+
+
 def test_sensitive_keys(load):
     assert load().SENSITIVE_KEYS == {"aadhaar", "bank_account", "ifsc", "pin"}
 
@@ -97,6 +107,7 @@ def test_empty_value_falls_back_to_default(load):
     ({"GATE_PROCEED": "1.5"}, "GATE_ASK"),
     ({"SEARCH_URL": "https://example.com/search"}, "SEARCH_URL"),
     ({"BROWSER_MODE": "firefox"}, "BROWSER_MODE"),
+    ({"BROWSER_HEADLESS": "maybe"}, "BROWSER_HEADLESS"),
     ({"CHROME_DEBUG_PORT": "80"}, "CHROME_DEBUG_PORT"),
     ({"CHROME_DEBUG_PORT": "70000"}, "CHROME_DEBUG_PORT"),
     ({"CHROME_DEBUG_PORT": "nine"}, "CHROME_DEBUG_PORT"),

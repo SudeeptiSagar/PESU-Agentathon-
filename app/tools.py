@@ -343,6 +343,22 @@ STABLE_SELECTOR_JS = r"""e => {
 }"""
 
 ACTION_TIMEOUT_MS = 5000
+# An amount the page shows next to the word "total": a currency mark before the number or a currency word after it.
+# "Total items: 3" and "Subtotal 100" do not match, so the read-back never reads a count out as money.
+TOTAL_RE = re.compile(
+    r"\btotal\b[^\d\n₹$]{0,25}"
+    r"((?:₹|rs\.?|inr|\$)\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*(?:rupees?|rs\b\.?|inr\b))",
+    re.I)
+
+
+async def find_total(page) -> str | None:
+    """The amount shown as the page's total (for example "249 rupees" or "₹1,249.50"), or None. Best effort."""
+    try:
+        text = await perception.main_text(page, max_chars=2500)
+    except Exception:
+        return None
+    matches = TOTAL_RE.findall(text or "")
+    return re.sub(r"\s+", " ", matches[-1]).strip() if matches else None    # the last one: the grand total
 
 
 def _clean(text: str, limit: int = 60) -> str:
@@ -521,6 +537,9 @@ class ToolExecutor:
             session.pending_action = {
                 "element_id": element_id, "label": label, "kind": kind, "url": page.url,
                 "domain": _domain_of(page.url), "selector": session.locators[element_id]}
+            total = await find_total(page)
+            if total:
+                session.pending_action["total_text"] = total        # read aloud with the question
             return (f"held: '{label}' ({kind}) was NOT pressed. It needs the user's spoken confirmation. "
                     "Tell the user and wait.")
         await perception.locate(page, session, element_id).click(timeout=ACTION_TIMEOUT_MS)

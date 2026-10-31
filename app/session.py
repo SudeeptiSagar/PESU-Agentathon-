@@ -2,8 +2,11 @@
 
 Owner: M1. Only this module's state machine may move to COMMITTING (hard rule 2).
 """
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
+
+log = logging.getLogger("app.session")
 
 STATES = (
     "IDLE", "PLANNING", "ACTING", "VERIFYING", "READBACK", "AWAITING_CONFIRM",
@@ -180,4 +183,22 @@ class Context:
         self.last_spoken = text
         await self.emit("speak", text=text)
         if self.tts is not None:
-            await self.tts.speak(text)
+            try:
+                await self.tts.speak(text)
+            except Exception as e:      # a broken voice must never stop the agent
+                log.warning("speech output failed: %s", type(e).__name__)
+                self.tts = None         # stop trying; the Console still shows (and may voice) every speak event
+                await self.emit("alert", level="warning",
+                                message="Speech output stopped working, so I will show text only.")
+            else:
+                await self.refocus()
+
+    async def refocus(self) -> None:
+        """Give the Voice Console the keyboard focus back (Handy pastes into it, PRD 8.3)."""
+        refocus = getattr(self.browser, "refocus_console", None)
+        if refocus is None:
+            return
+        try:
+            await refocus()
+        except Exception as e:
+            log.debug("refocus failed: %s", type(e).__name__)

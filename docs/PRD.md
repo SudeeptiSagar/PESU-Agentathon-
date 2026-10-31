@@ -190,7 +190,7 @@ pesu-agentathon/
 | Ollama | `OLLAMA_URL` (default `http://localhost:11434/v1`), `LLM_MODEL` (default `qwen3:8b`), `NUM_CTX=8192` |
 | Search | `SEARCH_URL` (default `https://html.duckduckgo.com/html/?q={q}`); `SEARCH_URL=http://localhost:8000/web/search.html?q={q}` for the offline demo |
 | Autonomy | `MAX_STEPS=30`, `MAX_FAILURES=2`, `BLOCKED_DOMAINS` (comma list) |
-| Browser | `BROWSER_MODE=chromium` (default) or `chrome` or `attach`; `CHROME_PATH` (empty = auto-detect), `CHROME_DEBUG_PORT=9222`, `AGENT_PROFILE_DIR=~/.voiceagent/chrome-profile` (outside the repo) |
+| Browser | `BROWSER_MODE=chromium` (default) or `chrome` or `attach`; `BROWSER_HEADLESS=false` (true = no windows, for automated tests); `CHROME_PATH` (empty = auto-detect), `CHROME_DEBUG_PORT=9222`, `AGENT_PROFILE_DIR=~/.voiceagent/chrome-profile` (outside the repo) |
 | Voice | `STT_BACKEND=handy` or `whisper`; `TTS_BACKEND=piper` or `browser`; `PIPER_VOICE=<path to .onnx>` |
 | Jev | `GATE_BACKEND=jev` or `llm` or `rules`, plus any key Jev needs (from M4's notes) |
 
@@ -486,6 +486,8 @@ def log_event(kind: str, **fields) -> None                   # drops sensitive k
 | Backend → Console | `input_mode` | `{mode: "voice"|"typed_secret"}` (the Console hides typed secrets) |
 
 Only the backend's command matcher turns an utterance into a confirmation. The Console never sets `confirmed` itself.
+
+The backend serves the built Console (`cd client; npm ci; npm run build`, then `client/dist/console.html` at `/console` and `client/dist/assets/` at `/assets`; a placeholder page until it is built). All Console connections share one session, so reloading the Console never starts a second browser. `/ws/console` **refuses any browser `Origin` that is not the Console's own** (`localhost` or `127.0.0.1` on the backend port, or the Vite dev port 5173), so no web page open in the agent's browser can connect and send "confirm". Clients that send no Origin (tests, scripts) are accepted. `{type:"key", name:"Space"}` pauses a running task or continues a paused one.
 
 ## 13. Team roles
 

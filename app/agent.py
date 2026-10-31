@@ -14,12 +14,20 @@ import json
 import logging
 import re
 
-from app import config, gate, humancheck, readback, tools, voice
+from app import audit, config, gate, humancheck, readback, tools, voice
 from app.llm import llm
 from app.profile import PLACEHOLDER_KEYS
 from app.session import Context, IllegalTransition, confirm, resume, transition
 
 log = logging.getLogger("app.agent")
+
+
+def _audit(event: str, **fields) -> None:
+    """Write one audit-log line. The audit module drops sensitive keys and masks id-like numbers itself."""
+    try:
+        audit.log_event(event, **fields)
+    except Exception as e:      # auditing must never break the agent
+        log.debug("audit failed: %s", type(e).__name__)
 
 # Tools whose calls go through the gate first. Reading, scrolling, tabs and the control tools do not.
 GATED = frozenset({"navigate", "web_search", "click", "type_text", "fill_field", "select_option", "press_key"})
@@ -222,6 +230,7 @@ async def _free_text(ctx: Context, text: str) -> None:
         s.goal, s.failures, s.history, s.progress, s.expected = text, 0, [], [], {}
         s.pending_action, s.confirmed = None, False
         ctx.notes, ctx.question, ctx.approved_action = [], None, None
+        _audit("task_start", goal=text[:200])
         await set_state(ctx, "PLANNING")
         await set_state(ctx, "ACTING")
         return _start(ctx)
@@ -252,6 +261,7 @@ async def stop(ctx: Context) -> None:
         await asyncio.gather(task, return_exceptions=True)
     transition(ctx.session, "IDLE")
     ctx.question, ctx.notes, ctx.approved_action = None, [], None
+    _audit("stop")
     if ctx.tts is not None:
         ctx.tts.interrupt()
     await ctx.emit("state", name="IDLE")
@@ -269,6 +279,14 @@ async def _pause(ctx: Context) -> None:
         await asyncio.gather(task, return_exceptions=True)
     await set_state(ctx, "PAUSED")
     await ctx.say("Paused. Say continue to carry on.")
+
+
+async def toggle_pause(ctx: Context) -> None:
+    """The Space key (Console, empty box): pause a running task, or continue a paused one."""
+    if ctx.session.state == "PAUSED":
+        await _continue(ctx)
+    else:
+        await _pause(ctx)
 
 
 async def _continue(ctx: Context) -> None:
@@ -320,6 +338,7 @@ async def _answer_yes_no(ctx: Context, yes: bool) -> bool:
         domain = q["domain"]
         if yes:
             tools.approve_domain(s, domain)
+            _audit("domain_approved", domain=domain)
             ctx.notes.append(f"The user allowed typing their saved details on {domain}. Retry that step.")
         else:
             ctx.notes.append(f"The user refused to share saved details on {domain}. Do not fill profile fields there; "
@@ -347,6 +366,7 @@ async def _confirm(ctx: Context) -> None:
     s = ctx.session
     if s.state != "AWAITING_CONFIRM":
         return await ctx.say("There is nothing waiting for your confirmation.")
+    pending = dict(s.pending_action or {})
     try:
         confirm(s)                                   # AWAITING_CONFIRM -> COMMITTING
     except IllegalTransition:
@@ -357,6 +377,7 @@ async def _confirm(ctx: Context) -> None:
     except PermissionError:
         result = "error: I could not press it."
     status, detail = tools.parse_result(result)
+    _audit("confirm", status=status, label=(pending or {}).get("label"), domain=(pending or {}).get("domain"))
     s.history.append(tools.hide_profile_text(f"- the user confirmed -> {result.splitlines()[0][:200]}", s.profile))
     ctx.notes.append(f"The user confirmed and the held control was pressed. Outcome: {result}")
     await set_state(ctx, "ACTING")                   # COMMITTING -> ACTING: read what happened and finish
@@ -391,6 +412,7 @@ async def human_check(ctx: Context, page) -> bool:
     if not challenge:
         return False
     await set_state(ctx, "NEEDS_HUMAN_CHECK")
+    _audit("human_check", challenge=challenge["kind"])
     await ctx.emit("alert", level="warning", message=f"{challenge['kind']}: {challenge['hint']}")
     await ctx.say(f"{_sentence(challenge['hint'])} Please do this yourself, then say done.")
     return True
@@ -413,11 +435,25 @@ async def _gate(ctx: Context, call: dict, page) -> dict | None:
     if name not in GATED:
         return None
     element = s.elements.get(args.get("element_id") or args.get("field_id") or "")
+    domain = tools._domain_of(getattr(page, "url", ""))
     if name == "click" and (element is None or element.get("irreversible")):
         return None          # irreversible controls are held by the executor, not judged here
-    context = {"goal": s.goal, "domain": tools._domain_of(getattr(page, "url", "")),
-               "approved_domains": set(s.approved_domains), "element": element,
-               "history_tail": s.history[-5:]}
+    # Saved values on a site the user has not approved: the executor asks "may I type your details here?",
+    # which the user can answer. A gate "block" would be a dead end, so the gate judges the fill afterwards.
+    uses_profile = name == "fill_field" or (name == "select_option" and tools.PLACEHOLDER.match(str(args.get("option", ""))))
+    if uses_profile and not tools.may_type_profile(s, domain):
+        return None
+    # A name nobody can resolve: the executor tells the model to use web_search, which is more useful than a block.
+    if name == "navigate" and tools.resolve_target(str(args.get("target", ""))).get("url") is None:
+        return None
+    # With the rules-only gate, a click that page analysis calls harmless leaves nothing to judge: the gate's
+    # own word match only adds false alarms ("Find a post office"). Jev and LLM backends still see it.
+    if name == "click" and config.GATE_BACKEND == "rules":
+        return None
+    context = {"goal": s.goal, "domain": domain, "approved_domains": set(s.approved_domains),
+               # a site the user approved for saved details has had its first-sensitive-fill question already
+               "sensitive_fills": set(s.approved_domains),
+               "element": element, "history_tail": s.history[-5:]}
     try:
         verdict = await asyncio.wait_for(gate.check(call, context), GATE_TIMEOUT_S)
     except Exception as e:
@@ -467,6 +503,7 @@ async def run_task(ctx: Context) -> None:
             if verdict:
                 summary = f"{call['name']}({_args_text(call['args'])})"
                 reason = verdict.get("reason") or "it needs your approval"
+                _audit("gate", action=call["name"], decision=verdict["decision"], reason=reason[:120])
                 if verdict["decision"] == "block":
                     await ctx.say(f"I will not do that: {reason}.")
                     _remember(ctx, steps + 1, call, f"blocked by the safety check: {reason}")
@@ -480,9 +517,14 @@ async def run_task(ctx: Context) -> None:
             result = "error: you repeated the same step three times; try something different"
         else:
             result = await executor.run(call, s, ctx.browser)
+            await ctx.refocus()                      # Handy pastes into the Console, so it must keep the focus
         steps += 1
         _remember(ctx, steps, call, result)
         status, detail = tools.parse_result(result)
+        _audit("step", n=steps, action=call["name"], status=status,
+               domain=tools._domain_of(getattr(ctx.browser.active, "url", "")))
+        if status == "held":
+            _audit("held", label=(s.pending_action or {}).get("label"), control=(s.pending_action or {}).get("kind"))
         await ctx.emit("step", n=steps, action=call["name"], target=_args_text(call["args"])[:80],
                        result=result.splitlines()[0][:100])
 
