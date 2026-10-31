@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Accessible Store - Products</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="shop.html">Accessible Store</a>
+    <nav aria-label="Shop">
+      <a href="shop.html">Products</a>
+      <a href="cart.html" id="cart-count">Cart (0)</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Products</h1>
+    <p class="muted">Mock shop for the Agentathon demo. No real orders or payments.</p>
+    <p id="added" role="status" aria-live="polite"></p>
+    <div class="products" id="products"></div>
+  </main>
+  <script src="cart.js"></script>
+  <script>
+    (function () {
+      var grid = document.getElementById("products");
+      PRODUCTS.forEach(function (p) {
+        var card = document.createElement("section");
+        card.className = "product";
+        card.setAttribute("aria-label", p.name);
+        card.innerHTML = "<h2></h2><p class='price'></p>";
+        card.querySelector("h2").textContent = p.name;
+        card.querySelector(".price").textContent = rupees(p.price);
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.id = "add-" + p.id;
+        btn.textContent = "Add to cart";
+        btn.setAttribute("aria-label", "Add " + p.name + " to cart");
+        btn.addEventListener("click", function () {
+          Cart.add(p.id);
+          showCartCount();
+          document.getElementById("added").textContent = p.name + " added to cart.";
+        });
+        card.appendChild(btn);
+        grid.appendChild(card);
+      });
+      showCartCount();
+    })();
+  </script>
+</body>
+</html>

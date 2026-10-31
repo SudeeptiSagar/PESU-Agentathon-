@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inbox - MockMail</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="inbox.html">MockMail</a>
+    <span class="muted">ramesh@example.com</span>
+  </header>
+  <main>
+    <div class="mail-layout">
+      <nav aria-label="Folders">
+        <a href="inbox.html" aria-current="page">Inbox</a>
+        <a href="#">Starred</a>
+        <a href="#">Sent</a>
+        <a href="#">Drafts</a>
+      </nav>
+      <section aria-labelledby="inbox-heading">
+        <h1 id="inbox-heading">Inbox</h1>
+        <div class="toolbar">
+          <button type="button" id="compose">Compose</button>
+        </div>
+        <p id="empty" hidden>Your inbox is empty.</p>
+        <table class="inbox" aria-label="Messages, newest first">
+          <tbody id="rows"></tbody>
+        </table>
+      </section>
+    </div>
+  </main>
+  <script src="mail.js"></script>
+  <script>
+    (function () {
+      var rows = document.getElementById("rows");
+      var list = Mail.list();
+      document.getElementById("empty").hidden = list.length > 0;
+      list.forEach(function (m) {
+        var tr = document.createElement("tr");
+        tr.className = m.unread ? "unread" : "";
+        tr.innerHTML = "<td></td><td><a></a> <span class='muted'></span></td><td></td>";
+        tr.children[0].textContent = m.from;
+        var a = tr.querySelector("a");
+        a.href = "message.html?id=" + m.id;
+        a.id = "msg-" + m.id;
+        a.textContent = m.subject;
+        tr.querySelector(".muted").textContent = "- " + m.body.replace(/\s+/g, " ").slice(0, 60);
+        tr.children[2].textContent = m.date;
+        rows.appendChild(tr);
+      });
+      document.getElementById("compose").addEventListener("click", function () {
+        alert("Compose is not available in the mock mailbox.");
+      });
+    })();
+  </script>
+</body>
+</html>
