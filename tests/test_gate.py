@@ -194,6 +194,81 @@ async def test_irreversible_clicks_ask_and_never_proceed():
         assert result["p"] == 0.5
 
 
+async def test_explicit_irreversible_false_is_trusted_over_the_text_fallback():
+    """Perception judged this link harmless; the "post office" label must not ask."""
+    element = {"id": "l1", "kind": "link", "label": "Find a post office",
+               "irreversible": False}
+    result = await gate.check(action("click", element_id="l1"), context(element=element))
+    assert result["decision"] == "proceed"
+    assert result["p"] == 0.99
+
+    # A label the text regex would otherwise catch stays harmless when the flag says so.
+    result = await gate.check(
+        action("click", element_id="l1"),
+        context(element={"id": "l1", "kind": "link", "text": "Send message",
+                         "irreversible": False}),
+    )
+    assert result["decision"] == "proceed"
+
+
+async def test_explicit_irreversible_false_is_trusted_over_the_kind_fallback():
+    """The executor holds a real submit button, so the gate does not second-guess it."""
+    element = {"id": "b1", "kind": "submit", "label": "Submit application",
+               "irreversible": False}
+    result = await gate.check(action("click", element_id="b1"), context(element=element))
+    assert result["decision"] == "proceed"
+
+    # Enter on the same control is equally harmless: perception said so.
+    result = await gate.check(action("press_key", key="Enter"), context(element=element))
+    assert result["decision"] == "proceed"
+
+
+async def test_without_the_key_the_text_fallback_still_catches():
+    element = {"id": "l1", "kind": "link", "label": "Find a post office"}
+    assert "irreversible" not in element
+    result = await gate.check(action("click", element_id="l1"), context(element=element))
+    assert result["decision"] == "ask_user"
+    assert result["risk"] == "irreversible"
+    assert result["reason"] == "irreversible control needs confirmation: link"
+    assert result["p"] == 0.5
+
+
+async def test_explicit_irreversible_true_always_asks():
+    for element in (
+        {"id": "b1", "kind": "link", "label": "Read more", "irreversible": True},
+        {"id": "b1", "kind": "other", "label": "Continue", "irreversible": True},
+        {"id": "b1", "label": "Continue", "irreversible": True},
+    ):
+        result = await gate.check(
+            action("click", element_id="b1"), context(element=element)
+        )
+        assert result["decision"] == "ask_user", element
+        assert result["risk"] == "irreversible"
+        assert result["p"] == 0.5
+
+        # Enter on a control perception flagged is held as well.
+        result = await gate.check(
+            action("press_key", key="Enter"), context(element=element)
+        )
+        assert result["decision"] == "ask_user", element
+
+
+def test_element_is_irreversible_trusts_the_explicit_flag():
+    # The flag decides on its own, whatever kind or text says.
+    assert gate._element_is_irreversible(
+        {"kind": "link", "label": "Find a post office", "irreversible": False}
+    ) is False
+    assert gate._element_is_irreversible({"kind": "submit", "irreversible": False}) is False
+    assert gate._element_is_irreversible({"kind": "link", "irreversible": True}) is True
+    # Without the flag, kind and text are the only evidence left.
+    assert gate._element_is_irreversible({"kind": "link", "label": "Find a post office"}) is True
+    assert gate._element_is_irreversible({"kind": "submit"}) is True
+    assert gate._element_is_irreversible({"label": "Pay now"}) is True
+    assert gate._element_is_irreversible({"label": "Read more"}) is False
+    assert gate._element_is_irreversible({}) is False
+    assert gate._element_is_irreversible(None) is False
+
+
 async def test_apply_and_confirm_text_are_not_irreversible_by_themselves():
     for element in (
         {"id": "b1", "text": "Apply now", "kind": "other"},
