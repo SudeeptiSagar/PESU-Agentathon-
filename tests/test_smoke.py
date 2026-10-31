@@ -63,7 +63,9 @@ def test_ws_echo_and_stop():
     with TestClient(app).websocket_connect("/ws/console") as ws:
         assert ws.receive_json() == {"type": "state", "name": "IDLE"}
         ws.send_json({"type": "utterance", "text": "hello"})
-        assert ws.receive_json() == {"type": "speak", "text": "You said: hello"}
+        # CORE-10: the agent answers instead of echoing. No browser is wired in yet (CORE-11).
+        assert ws.receive_json() == {"type": "speak",
+                                     "text": "The browser is not ready, so I can't do that yet."}
         ws.send_json({"type": "key", "name": "Escape"})
         assert ws.receive_json() == {"type": "state", "name": "IDLE"}
         assert ws.receive_json() == {"type": "speak", "text": "Stopped."}

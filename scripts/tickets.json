@@ -401,12 +401,12 @@
     "owner": "Sudeepti (M3)",
     "labels": [
       "role:browser",
-      "P1"
+      "P0"
     ],
-    "milestone": "Freeze and demo",
-    "priority": "P1",
+    "milestone": "CP4 First end to end",
+    "priority": "P0",
     "depends_on": "BRW-02",
-    "acceptance": "Optional mode connects to a running Chrome with the same `BrowserController` interface; launch steps that work on the demo machine documented (recent Chrome restricts remote debugging on the default profile); Task D works on the real Gmail inbox: open inbox, open newest message, `main_text` reads it; `gmail` and `my mail` aliases in `sites.json` with `trusted: false`"
+    "acceptance": "BROWSER_MODE=chrome starts the installed Chrome with remote debugging on 127.0.0.1 and the persistent AGENT_PROFILE_DIR and attaches over CDP with the same BrowserController interface; attach connects to a running Chrome; chromium stays the default fallback. Proof first: sign in to Gmail by hand once, close Chrome, reopen via the agent, still signed in (recorded in docs/REAL_SITE_NOTES.md). Voice Console is its own window of the same Chrome and scripts/focus_test.py passes in this mode. Task D on real Gmail: open inbox, open newest message, main_text reads it; gmail and my mail aliases in sites.json, trusted false. No automation-hiding flags and no fake user agent"
   },
   {
     "id": "BRW-08",

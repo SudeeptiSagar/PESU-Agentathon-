@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app import llm as llm_mod
-from app.profile import _SAMPLE
+from app.profile import DEMO_PROFILE as _SAMPLE
 
 _spec = importlib.util.spec_from_file_location(
     "reliability_test", Path(__file__).resolve().parent.parent / "scripts" / "reliability_test.py")
