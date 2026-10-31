@@ -201,11 +201,14 @@ class BrowserTTS(TTS):
         self._send = send  # async callable taking an event dict
 
     async def speak(self, text: str) -> None:
-        # STUB: UI-06
         await self._send({"type": "speak", "text": text})
 
     def interrupt(self) -> None:
-        # STUB: UI-06
+        """Browser speech is cancelled by the Console on new input or Escape.
+
+        Section 12 has no backend-to-browser cancellation event, so this
+        adapter intentionally has no backend-side interrupt operation.
+        """
         return None
 
 
