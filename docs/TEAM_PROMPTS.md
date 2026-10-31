@@ -30,10 +30,12 @@ Acceptance: fresh clone -> venv -> pip install -> `python -m app.main` serves /h
 WebSocket echo; `pytest -q` passes. Show me the real output of both.
 
 Then CORE-04 (config.py with every variable and default in Section 7, gate thresholds, blocked
-domains, sensitive keys), CORE-02 (llm.py against Ollama's OpenAI-compatible endpoint, temperature 0,
+domains, sensitive keys), CORE-02 (llm.py against Ollama's native /api/chat, because /v1 ignored num_ctx, temperature 0,
 num_ctx from config, validated tool calls, one retry on malformed output), and CORE-03: a script that
 runs 10 fill_field calls on a sample form and 10 click choices on a sample search-results snapshot
 and prints both pass counts.
+
+Later: CORE-14, a start script plus an OS keyboard shortcut that brings the whole system up (PRD 3.1).
 ```
 
 ## M2, Vishal: UI, frontend and voice (first: UI-01, UI-02, UI-06)
@@ -65,6 +67,8 @@ back, done, where, help; spoken_digits; words_to_digits), with unit tests for th
 Check Piper's current docs for the Python API; do not guess it. Report real test output.
 
 At 20:30 you run UI-04 (Handy decision gate) with Sudeepti's scripts/focus_test.py.
+If Handy passes, its hold-to-talk key is the in-app key (the app itself starts from an OS keyboard shortcut, CORE-14);
+a spoken wake word is not planned for the demo. See issue #22.
 ```
 
 ## M3, Sudeepti: browser and sites (first: BRW-01, BRW-02, then BRW-09, BRW-03, BRW-08)
@@ -97,6 +101,9 @@ Console has focus (needed for UI-04 at 20:30). Check the installed Playwright do
 Next: BRW-09 (mock_site/web/: search results page reading ?q=, an article page, a shop with cart and a
 checkout payment page), then BRW-03 (perception snapshot + main_text) and BRW-08 (flag every
 irreversible button with `irreversible` and `kind`).
+
+Stretch (Task D, PRD 3.1): BRW-07 is now P1. Attach to the user's own Chrome over CDP so the agent can open their Gmail
+and read the newest message (read-only), and add a mock inbox and message page to mock_site/web/. See issue #33.
 ```
 
 ## M4, Abishek: Jev, verification and demo (first: JEV-01, then JEV-02, JEV-03, JEV-04)
@@ -125,6 +132,8 @@ describe_pending: one sentence naming the action, the site and any total shown. 
 
 JEV-04 on branch jev/JEV-04-gate-rules: the deterministic rules from the PRD Section 10 autonomy policy.
 Irreversible elements must never return "proceed". Report real test output.
+
+Later (JEV-07): add Task D (read the newest message in the mock inbox) to the end-to-end tests once BRW-07 and BRW-09 land.
 ```
 
 ---
