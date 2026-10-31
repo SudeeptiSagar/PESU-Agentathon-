@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # LLM (Ollama, OpenAI-compatible)
 OLLAMA_URL = _env("OLLAMA_URL", "http://localhost:11434/v1")
-LLM_MODEL = _env("LLM_MODEL", "qwen2.5:7b")
+LLM_MODEL = _env("LLM_MODEL", "qwen3:8b")
 NUM_CTX = int(_env("NUM_CTX", "8192"))
 
 # Search and autonomy

@@ -1,6 +1,6 @@
 # Check llm.py against a real Ollama (CORE-02)
 
-For a teammate or an agent (for example Antigravity) on a machine that has Ollama and `qwen2.5:7b`.
+For a teammate or an agent (for example Antigravity) on a machine that has Ollama and `qwen3:8b`.
 It takes about 5 minutes. Nothing here uses profile data or secrets.
 
 ## Run
@@ -12,8 +12,8 @@ python -m venv .venv
 source .venv/bin/activate              # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-ollama pull qwen2.5:7b                 # skip if already installed; Ollama must be running
-cp .env.example .env                   # defaults: OLLAMA_URL=http://localhost:11434/v1, LLM_MODEL=qwen2.5:7b
+ollama pull qwen3:8b                 # skip if already installed; Ollama must be running
+cp .env.example .env                   # defaults: OLLAMA_URL=http://localhost:11434/v1, LLM_MODEL=qwen3:8b
 python scripts/check_llm.py
 pytest -q                              # should print 34 passed
 ```
