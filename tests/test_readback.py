@@ -126,6 +126,15 @@ def test_empty_value_is_spoken_as_empty():
     assert build_readback(session, {"full_name": {"value": ""}})[0] == "Full name is empty."
 
 
+def test_empty_sensitive_value_is_not_spoken_as_none():
+    session = _session({"aadhaar": _field("Aadhaar number", "1234 5678 9012",
+                                           source="profile:aadhaar")})
+    chunk = build_readback(session, {"aadhaar": ""})[0]
+    assert chunk == "Aadhaar number is empty."
+    assert "None" not in chunk
+    assert "ending" not in chunk
+
+
 def test_whitespace_is_collapsed():
     session = _session({"address": _field("Address", "12 MG Road",
                                           source="profile:address")})
@@ -192,6 +201,23 @@ def test_describe_pending_prefers_site_over_site_id():
 def test_describe_pending_maps_known_domain_from_sites_json():
     session = Session(pending_action={"label": "Submit application", "domain": "localhost"})
     assert describe_pending(session) == \
+        "I'm about to press Submit application on demo portal."
+
+
+def test_describe_pending_uses_url_path_when_localhost_is_ambiguous():
+    # Both demo sites share the localhost domain. The URL path must decide.
+    shop = Session(pending_action={
+        "label": "Place order", "domain": "localhost",
+        "url": "http://localhost:8000/web/checkout.html", "total": 249,
+    })
+    assert describe_pending(shop) == \
+        "I'm about to press Place order on demo shop. Total 249 rupees."
+
+    portal = Session(pending_action={
+        "label": "Submit application", "domain": "localhost",
+        "url": "http://localhost:8000/portal/apply.html",
+    })
+    assert describe_pending(portal) == \
         "I'm about to press Submit application on demo portal."
 
 

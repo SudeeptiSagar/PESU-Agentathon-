@@ -11,6 +11,7 @@ import json
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from urllib.parse import urlparse
 
 from app import config
 
@@ -115,6 +116,8 @@ def _sentence(label, value) -> str:
 
 def _masked(value) -> str:
     """Mask a sensitive value to its last four characters, spoken one by one."""
+    if value is None:
+        return ""
     chars = [ch for ch in str(value) if ch.isalnum()]
     if not chars:
         return ""
@@ -249,9 +252,14 @@ def _site_name(pending: dict) -> str:
     site_id = _collapse(pending.get("site_id"))
     if site_id:
         return _prettify(site_id)
+    url = _collapse(pending.get("url"))
+    if url:
+        by_url = _site_for_url(url)
+        if by_url:
+            return by_url
     domain = _collapse(pending.get("domain"))
     if not domain:
-        domain = _domain_from_url(_collapse(pending.get("url")))
+        domain = _domain_from_url(url)
     if domain:
         return _site_for_domain(domain) or domain.rstrip(" .")
     return "this site"
@@ -276,6 +284,35 @@ def _load_sites() -> list[dict]:
     except (OSError, ValueError):
         return []
     return [site for site in sites if isinstance(site, dict)]
+
+
+def _site_for_url(url: str) -> str | None:
+    """Match a pending URL to a site by host and first path segment.
+
+    Several demo sites share the `localhost` domain, so the domain alone cannot
+    tell the shop from the portal. The URL path can: /web/... is the shop and
+    /portal/... is the portal.
+    """
+    parsed = urlparse(url)
+    host = _bare_domain(parsed.hostname or "")
+    segments = [part for part in (parsed.path or "").split("/") if part]
+    if not host or not segments:
+        return None
+    wanted = segments[0].lower()
+    for site in _load_sites():
+        site_url = urlparse(str(site.get("url") or ""))
+        if _bare_domain(site_url.hostname or "") != host:
+            continue
+        site_segments = [part for part in (site_url.path or "").split("/") if part]
+        if not site_segments or site_segments[0].lower() != wanted:
+            continue
+        name = site.get("id")
+        if not name:
+            aliases = site.get("aliases") or []
+            name = aliases[0] if aliases else None
+        if name:
+            return _prettify(str(name))
+    return None
 
 
 def _site_for_domain(domain: str) -> str | None:

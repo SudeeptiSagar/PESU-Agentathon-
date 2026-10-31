@@ -19,8 +19,9 @@ from app import config
 logger = logging.getLogger(__name__)
 
 # Module-level so tests and callers can redirect the log without touching config.
-# Default lives next to the encrypted profile, outside the repository.
-LOG_PATH: Path = Path(config.PROFILE_PATH).parent / "audit.jsonl"
+# Default lives in a gitignored directory inside the project folder, so logs stay
+# on the same drive as the repo and never land in the encrypted-profile directory.
+LOG_PATH: Path = Path(config.ROOT) / ".audit" / "audit.jsonl"
 
 _LOCK = threading.Lock()
 _MAX_DEPTH = 20

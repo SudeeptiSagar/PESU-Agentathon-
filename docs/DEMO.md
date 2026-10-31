@@ -92,9 +92,9 @@ Expected agent lines, in order:
 1. "Opening the demo pension portal." (about 1:12)
 2. "Filling personal details from your profile." (about 1:20)
 3. "Filling bank details." (about 1:30)
-4. Verifier catch, about 1:36: "The PIN code on the page reads 5 6 0 0 1. Your profile says 5 6 0 0 0 1. Correcting it." Then, after a re-check, if the retry succeeds: "The PIN code is now correct."
+4. Verifier catch, about 1:36: "The PIN code on the page reads 5 6 0 0 0. Your profile says 5 6 0 0 0 1. Correcting it." Then, after a re-check, if the retry succeeds: "The PIN code is now correct."
 5. Robot check, about 1:44: "There is an I'm not a robot check. Please complete it in the browser, then say done."
-6. Read-back, about 1:52: "Reading back from the page. Name: Ramesh Kumar. PIN code: 5 6 0 0 0 1. Aadhaar ending 1 2 3 4. Bank account ending 4 3 2 1. Everything else matches your profile. Say confirm to go ahead, or say change and the field name."
+6. Read-back, about 1:52: the agent reads the actual page values. The current build reads every filled field, so the first four risk fields are: "Name: Ramesh Kumar. PIN code: 5 6 0 0 0 1. Aadhaar ending 1 2 3 4. Bank account ending 4 3 2 1." Then the remaining fields, then "Say confirm to go ahead, or say change followed by the field name." If CORE-12 adds a compact read-back that says "everything else matches your profile", use that; do not claim it before it exists.
 7. After "confirm": "Submitted. Your acknowledgment number is [number from the mock acknowledgment page]."
 
 Presenter, exact, at the robot check:
@@ -111,12 +111,12 @@ Presenter, exact, after the acknowledgment:
 
 > "The page was wrong. The verifier read the real page, and Ramesh confirmed by voice."
 
-- Console should show: `state = ACTING`, then `VERIFYING`, a warn-level `alert` naming the PIN code mismatch (expected `560001`, actual `56001`), then `NEEDS_HUMAN_CHECK` while the robot check is open, then `READBACK`, `AWAITING_CONFIRM` with a `pending` description, `COMMITTING`, `DONE`.
+- Console should show: `state = ACTING`, then `VERIFYING`, a warn-level `alert` naming the PIN code mismatch (expected `560001`, actual `56000`), then `NEEDS_HUMAN_CHECK` while the robot check is open, then `READBACK`, `AWAITING_CONFIRM` with a `pending` description, `COMMITTING`, `DONE`.
 - Console field table: one row per field with a masked value. Aadhaar and bank account and IFSC show only the last four digits. The PIN code is a postal code, not a secret, so it shows in full.
 - Console must never show: a full Aadhaar, bank account, IFSC or the app PIN. If it does, that is a hard-rule failure; stop the demo.
 - Values in line 6 come from the prepared demo profile. The worked example assumes `full_name` Ramesh Kumar and `pin_code` 560001. Set the profile to match before R1, or adjust the example. Do not let the agent read a value that is not in the profile.
 - Timing: utterance by 1:04, both tabs filled by 1:34, trap caught by 1:42, robot check done by 1:50, read-back by 2:02, acknowledgment by 2:08, presenter line by 2:10. This is tight. Rehearse it before promising it.
-- Dependency, unverified: the mock portal's PIN code field "silently drops its last digit" (BRW-01). The PRD does not say whether it drops on every fill or only once. If it drops on every fill, the correction in line 4 will fail and Task B cannot reach the acknowledgment inside 70 seconds. M3 must confirm the trap is recoverable after one retry before R1. Until then this beat is a design intention, not a proven run.
+- Dependency, now verified against the real mock portal (`mock_site/portal/apply.js`, 31 Oct): the PIN-code trap fires once, drops the sixth digit (`560001` -> `56000`), and later fills are kept. The correction in line 4 therefore works. The Console alert must show `expected 560001` and `actual 56000`. Re-confirm on the demo machine in R1.
 - Fallback A (read-back runs long, more than 15 seconds): do not interrupt it. Cut Task C and let Task B use the 20 seconds. The Close still starts at 2:30.
 - Fallback B (robot check not detected): the presenter clicks the checkbox anyway and says "Done"; if the agent does not resume, the operator presses the Console key for pause/continue. Do not let the agent click the checkbox.
 - Fallback C (verifier does not catch the truncation): stop. Say "The verifier missed the planted error, so we are not submitting." Do not say "confirm". This is a no-go for the live demo and the recorded video must be used. Report it as a bug.
@@ -377,7 +377,7 @@ Evidence line: "Layer five exists because layers one to four can still miss some
 - Without verification, the application could be rejected silently
 - This is a planted failure, shown on purpose
 
-Evidence line: "Expected 560001, actual 56001. The Console shows both."
+Evidence line: "Expected 560001, actual 56000. The Console shows both."
 
 ### Slide 8: Privacy and local-first
 

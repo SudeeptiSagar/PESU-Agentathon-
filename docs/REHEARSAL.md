@@ -323,7 +323,7 @@ These are open dependencies, not excuses. They are listed so the rehearsal does 
 | CORE-13 not landed | No stable build to rehearse | M1 | Before R1 |
 | `demo-v1` not tagged | The video cannot be tied to a build | M1 | Before R1 |
 | BRW-01 trap recoverability unconfirmed | If the PIN field drops a digit on every fill, the correction fails and Task B cannot reach the acknowledgment in 70 s | M3 | Before R1 |
-| Read-back length unconfirmed | A full 15-field read-back will not fit 70 s; the script assumes a compact read-back of the risk fields with "everything else matches" | M1, M4 | Before R1 |
+| Read-back length unconfirmed | A full 15-field read-back will not fit 70 s; the script reads the risk fields first and cuts Task C unless CORE-12 adds a compact mode | M1, M4 | Before R1 |
 | UI-03 accessibility check not done | Q&A answer 7 must say "designed for, not yet audited" | M2 | Before the demo |
 | Venue network not tested | Task A may have to run on the mock mirror | M3, M4 | R2 |
 | Task D (Gmail) not tested | It is a stretch and is not claimed | M3, M4 | Only if claimed |
