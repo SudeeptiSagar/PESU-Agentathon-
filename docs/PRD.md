@@ -237,7 +237,7 @@ Piper, played through sounddevice. Digits spoken separated ("9 8 7 6"). `interru
 
 ## 9. Backend reference
 
-**Reference repo:** `github.com/pascalLangdock/elevenlabs_hack`, which appears to be the backend of Wayfinder, a voice web-accessibility hackathon project. Its visible files are `requirements.txt` (browser-use, playwright, fastapi, uvicorn, langchain-openai, python-dotenv), `.env.example` (OpenAI and ElevenLabs keys) and a `backend/` folder. **We have not reviewed `backend/` yet, and no license was visible, so it is a design reference only. Do not copy its code.**
+**Reference repo:** `github.com/pascalLangdock/elevenlabs_hack`, which appears to be the backend of Wayfinder, a voice web-accessibility hackathon project. Its visible files are `requirements.txt` (browser-use, playwright, fastapi, uvicorn, langchain-openai, python-dotenv), `.env.example` (OpenAI and ElevenLabs keys) and a `backend/` folder. **`backend/` was reviewed in CORE-05 (see `docs/REFERENCE_NOTES.md`). The repo has no license, so it is a design reference only. Do not copy its code.**
 
 From the Wayfinder write-up: a FastAPI service is called by a cloud voice agent and starts a browser-use agent over Playwright, attached to the user's Chrome via CDP, capped at 5 steps, with a fresh agent per command and a spoken summary returned. That is the closest prior work to our new scope.
 
