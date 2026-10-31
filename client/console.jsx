@@ -251,6 +251,9 @@ function AssistantOrb() {
         const next = statusFor(event.name);
         setStatus(next);
         setAnnouncement(next.label);
+        if (String(event.name).toUpperCase() === "IDLE" && BROWSER_TTS_ENABLED) {
+          window.speechSynthesis?.cancel();
+        }
         if (["IDLE", "DONE"].includes(String(event.name).toUpperCase()))
           setPending(null);
         if (["AWAITING_CONFIRM", "NEEDS_HUMAN_CHECK", "NEEDS_USER"].includes(String(event.name).toUpperCase()))
@@ -262,7 +265,6 @@ function AssistantOrb() {
           const messageId = messageSequenceRef.current++;
           setStatus({ phase: "answering", label: "Answering" });
           if (browserTtsAvailable) {
-            window.speechSynthesis.cancel();
             window.speechSynthesis.speak(new SpeechSynthesisUtterance(event.text));
           }
           setAnnouncement("Answering");
@@ -311,6 +313,7 @@ function AssistantOrb() {
   const sendDraft = useCallback(() => {
     const text = draft.trim();
     if (!text) return;
+    if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
     if (!send({ type: "utterance", text })) {
       setAnnouncement("Reconnecting. Your request is still here.");
       return;
@@ -325,10 +328,10 @@ function AssistantOrb() {
   }, [draft, inputMode, send]);
 
   useEffect(() => {
-    if (!draft.trim() || connection !== "connected") return undefined;
+    if (!draft.trim() || connection !== "connected" || inputMode === "typed_secret") return undefined;
     const timer = window.setTimeout(sendDraft, 900);
     return () => window.clearTimeout(timer);
-  }, [draft, connection, sendDraft]);
+  }, [draft, connection, inputMode, sendDraft]);
 
   const sendKey = useCallback((name) => {
     if (name === "Escape") window.speechSynthesis?.cancel();
@@ -420,7 +423,6 @@ function AssistantOrb() {
         }}
         onBlur={() => setInputFocused(false)}
         onChange={(event) => {
-          if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
           setDraft(event.target.value);
         }}
         onKeyDown={handleKeyDown}

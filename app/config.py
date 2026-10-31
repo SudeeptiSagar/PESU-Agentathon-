@@ -39,6 +39,15 @@ def _float(name: str, default: float) -> float:
         raise ConfigError(f"{name} must be a number, got {raw!r}") from None
 
 
+def _bool(name: str, default: bool) -> bool:
+    raw = _env(name, "true" if default else "false").lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    raise ConfigError(f"{name} must be true or false, got {raw!r}")
+
+
 def _choice(name: str, default: str, allowed: tuple[str, ...]) -> str:
     value = _env(name, default).lower()
     if value not in allowed:
@@ -88,6 +97,8 @@ PIPER_VOICE = _env("PIPER_VOICE", "")
 #            sessions are already logged in.
 #  attach:   attach to a Chrome that is already running with remote debugging on.
 BROWSER_MODE = _choice("BROWSER_MODE", "chromium", ("chromium", "chrome", "attach"))
+# True runs Playwright's Chromium without windows (tests, servers). The demo uses visible windows.
+BROWSER_HEADLESS = _bool("BROWSER_HEADLESS", False)
 CHROME_PATH = _env("CHROME_PATH", "")  # empty = auto-detect the installed Chrome
 CHROME_DEBUG_PORT = _int("CHROME_DEBUG_PORT", 9222, minimum=1024)
 if CHROME_DEBUG_PORT > 65535:

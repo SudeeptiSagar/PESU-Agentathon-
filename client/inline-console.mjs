@@ -6,6 +6,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(root, "dist");
 const sourceHtml = resolve(dist, "console.dev.html");
 const outputHtml = resolve(root, "console.html");
+const outputDistHtml = resolve(dist, "console.html");
 let html = await readFile(sourceHtml, "utf8");
 let inlinedScript = false;
 let inlinedStyle = false;
@@ -47,4 +48,5 @@ if (
 }
 
 await writeFile(outputHtml, html.replace(/\r\n/g, "\n"), "utf8");
+await writeFile(outputDistHtml, html.replace(/\r\n/g, "\n"), "utf8");
 console.log(`Wrote self-contained FastAPI Console: ${outputHtml} (script inlined, stylesheet ${inlinedStyle ? "inlined" : "not emitted"})`);
