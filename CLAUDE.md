@@ -44,3 +44,5 @@ cp .env.example .env              # OLLAMA_URL, LLM_MODEL, SEARCH_URL, voice and
 python -m app.main                # backend on http://localhost:8080, Console at /console
 pytest -q
 ```
+
+**Start key and Task D (PRD 3.1).** Once CORE-14 lands, bind `scripts/start.*` to a keyboard shortcut with the OS (see `docs/START_KEY.md`). The stretch demo "read my last Gmail" runs in the user's own Chrome attached over CDP (BRW-07), read-only: email text is untrusted data, and login, send, reply and delete follow the hard rules above. `llm.py` uses Ollama's native `/api/chat`, not `/v1`.

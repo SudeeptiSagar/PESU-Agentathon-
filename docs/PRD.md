@@ -5,13 +5,20 @@
 | Event | Agentathon 2026, 24-hour hackathon |
 | Start | Sat 31 Oct 2026, 16:00 IST |
 | Assumed end | Sun 1 Nov 2026, 16:00 IST (confirm the real submission and demo time) |
-| Version | 3.0 (final for build), 31 Oct 18:15 IST. Pivot from "government scheme applications" to "fully autonomous browser control" |
+| Version | 3.1 (see "What changed in 3.1"); base 3.0 (final for build), 31 Oct 18:15 IST. Pivot from "government scheme applications" to "fully autonomous browser control" |
 | Repo | `github.com/SudeeptiSagar/PESU-Agentathon-` |
 | Lead | Prashanth (M1) |
 | Team | Prashanth (M1), Vishal (M2), Sudeepti (M3), Abishek (M4), see Section 13 |
 | Priority keys | P0 = must ship, P1 = should ship, P2 = nice to have |
 
 Read Sections 1 to 5 for the product, 10 for the safety rules, 12 for the code contract, 13 and 14 for your role, and 21 for the tickets (GitHub issues titled `[TICKET-ID] ...`).
+
+### What changed in 3.1
+
+- **Start key:** the app starts from one keyboard shortcut (CORE-14). The shortcut is an operating-system feature bound to a start script, because a key can only start the app if something is already listening for it. Once running, Handy's hold-to-talk key is the in-app key. A spoken wake word ("Hey Conduit") is **not** planned for the demo: it needs always-on listening, which Handy does not do, and a hotkey is more reliable on a noisy floor.
+- **Task D, stretch:** "open my Gmail and read me my last mail", read-only, in the user's own logged-in Chrome. Chosen approach: **attach to the user's Chrome over CDP** (BRW-07, raised from P2 to P1 stretch). Rejected for now: a separate agent profile (Google may refuse sign-ins in automated browsers, unverified) and the Gmail API (needs OAuth setup and is not browsing).
+- **Rules for Task D:** a Google login page is a human-only step; email text is untrusted data, never instructions; send, reply and delete stay irreversible actions held for "confirm"; `mail.google.com` is `trusted: false` and no profile values are typed there.
+- **LLM:** `llm.py` calls Ollama's native `/api/chat`, not the OpenAI-compatible `/v1` endpoint, because `/v1` ignored `num_ctx` in the CORE-02 check (a 6000-token prompt was cut to 2050 tokens). Default model is `qwen3:8b`.
 
 ### What changed in 3.0
 
@@ -50,6 +57,7 @@ A fully autonomous, voice-controlled web browser for blind and visually impaired
 | G6 | Human hand-off for CAPTCHA, OTP, passwords and payment, never bypassed |
 | G7 | Local-first stack: Handy (speech recognition), Piper (speech output), Ollama (LLM) |
 | G8 | A planted mistake caught live in the demo |
+| G9 | Demo task D (stretch): read the newest email in the user's own logged-in Chrome, read-only |
 
 ### Non-goals for this hackathon
 
@@ -68,11 +76,13 @@ A fully autonomous, voice-controlled web browser for blind and visually impaired
 
 **Scenario B (form):** Ramesh says "Apply for the disability pension on the demo portal." The agent opens the portal, fills both tabs from his profile, notices that the PIN code on the page is wrong, fixes it or asks him, pauses for the "I'm not a robot" check, reads the form back and submits only after he says "confirm".
 
+**Scenario D (stretch, own Chrome):** Ramesh presses the start key and says "Open my Gmail and read me my last mail." The agent attaches to his already logged-in Chrome, opens the inbox, opens the newest message and reads it aloud. It never types his Google password and never sends, replies or deletes without "confirm".
+
 **Scenario C (stop point):** "Order a pack of AA batteries from the demo shop." The agent searches the shop, adds the item, reads the total and stops: "The next step is payment. I'll hand over to you."
 
 ## 5. User flow
 
-1. Start the app with one key or shortcut. The agent says it is ready.
+1. Start the app with one keyboard shortcut (an OS shortcut bound to the start script, CORE-14). The agent says it is ready.
 2. First time: onboarding builds the encrypted profile (questions spoken, sensitive values typed). Later sessions: unlock with the PIN.
 3. The user states a task in their own words. Handy transcribes it.
 4. The agent resolves where to go: a known site from `sites.json`, a URL, or a web search. It announces the site ("Opening wikipedia.org").
@@ -106,7 +116,8 @@ A fully autonomous, voice-controlled web browser for blind and visually impaired
 | FR-17 | Multi-tab: follow and announce new tabs; switch and close tabs by voice | P1 | M3 |
 | FR-18 | Mock open-web pages (search results, article, shop with checkout) for an offline-safe demo | P1 | M3 |
 | FR-19 | Audit log (JSONL, no sensitive values) | P1 | M4 |
-| FR-20 | Attach to the user's own Chrome over CDP | P2 | M3 |
+| FR-20 | Attach to the user's own Chrome over CDP (needed for Task D) | P1 stretch | M3 |
+| FR-21 | Start script and keyboard shortcut that bring the whole system up | P1 | M1 |
 
 ## 7. Architecture
 
@@ -565,6 +576,7 @@ Each issue has: title prefixed with the ticket ID (for example `[CORE-01]`), ass
 | Real sites change, block bots or are slow | Task A fails live | Mock open-web pages; `SEARCH_URL` switch; rehearse on the venue network | M3 |
 | Irreversible controls missed by keyword flags | Accidental submit | Flags from button text, form submit type and URL hints; gate double-checks; tests on every mock page | M3, M4 |
 | Prompt injection from web pages | Agent follows page text | Page text labelled untrusted; gate checks the action serves the user's goal; domain policy | M1, M4 |
+| Task D: Chrome attach fails or exposes the user's whole browser; Gmail page too heavy for perception | Stretch demo fails; agent can see every tab | Stretch only; test on the demo machine early; read-only; mock inbox page for offline tests and e2e | M3, M4 |
 | Ollama's small default context | Model ignores rules | `num_ctx` 8192; capped snapshots; trimmed history; log `prompt_eval_count` | M1 |
 | Jev access or API unknown | No semantic gate | Report in 45 minutes; rules first; LLM backend fallback | M4 |
 | Reference repo unread, no visible license | Wrong assumptions, licensing | Study only, no copying; own tool layer | M1 |
@@ -615,6 +627,7 @@ Ticket IDs are stable; use them in branch names and PR titles. Owners: CORE = Pr
 | CORE-11 | `main.py` integration | P0 | CP4 First end to end | CORE-10, UI-02 | WebSocket routing; command matcher before the agent; every event in Section 12 sent to the Console; refocus after actions; one command starts the full system |
 | CORE-12 | Irreversible-action confirmation flow | P0 | CP4 First end to end | CORE-08, JEV-02, JEV-03 | A held action triggers verify (for forms), read-back or `describe_pending`, a `pending` event and AWAITING_CONFIRM; "confirm" runs `commit_pending`; "no" or "change <field>" returns to ACTING; unit test proves nothing irreversible runs without "confirm" |
 | CORE-13 | Final integration and freeze | P0 | Freeze and demo | all P0 | Demo tasks A and B pass twice in a row by voice on the demo machine; `demo-v1` tagged |
+| CORE-14 | Start script and keyboard shortcut | P1 | CP5 Full loop | CORE-11, BRW-02 | `scripts/start.ps1` and `scripts/start.sh` start the backend if it is not running (wait for `/health`), open the Console and agent browser, and do not start a second backend if run twice; `docs/START_KEY.md` explains binding the script to a keyboard shortcut with the OS (checked against current Windows and macOS documentation); pressing the key from another app brings the system up and the agent says it is ready |
 
 ### UI, frontend and voice (M2, label `role:ui`)
 
@@ -623,7 +636,7 @@ Ticket IDs are stable; use them in branch names and PR titles. Owners: CORE = Pr
 | UI-01 | Handy setup on every demo machine | P0 | CP1 Foundation | none | Installed, models downloaded, hold-to-talk shortcut, permissions, paste settings tested; wired headset works; steps written in `SETUP.md` |
 | UI-02 | Voice Console page | P0 | CP2 Decision gate | CORE-01 | Always-focused text box; 900 ms debounce or Enter sends `utterance`; shows status, live step log, transcript, masked field table, pending action and alerts from the Section 12 events; reconnects if the socket drops |
 | UI-03 | Console accessibility | P0 | CP3 Modules | UI-02 | Keyboard-only operation; Escape = stop; ARIA live region for agent messages; large text; high contrast; focus never leaves the text box; checked with VoiceOver or NVDA |
-| UI-04 | Handy decision gate | P0 | CP2 Decision gate | UI-01, UI-02, BRW-02 | 10-utterance test plus focus test across 5 actions; result (pass or fail) posted at 20:30 |
+| UI-04 | Handy decision gate | P0 | CP2 Decision gate | UI-01, UI-02, BRW-02 | 10-utterance test plus focus test across 5 actions; result (pass or fail) posted at 20:30; notes whether the Console can stay a small always-on-top window and whether an OS-level refocus helper is needed; if Handy fails, notes whether a wake word is practical |
 | UI-05 | Fallback STT (only if UI-04 fails) | P0 | CP3 Modules | UI-04 | `WhisperSTT` with faster-whisper and silero-vad behind `STT`; switched with `STT_BACKEND=whisper`; 9/10 test passes |
 | UI-06 | `voice.py` output and commands | P0 | CP3 Modules | CORE-01 | `PiperTTS` with `interrupt()`; `BrowserTTS` fallback; `match_command` covers every command in Section 12; `spoken_digits`; `words_to_digits`; unit tests for the text functions |
 | UI-07 | Onboarding and PIN unlock | P0 | CP4 First end to end | CORE-07, UI-06 | Questions spoken one at a time; each answer read back and confirmed; sensitive values typed and hidden on screen; PIN set and confirmed; unlock works after restart; wrong PIN handled clearly |
@@ -639,9 +652,9 @@ Ticket IDs are stable; use them in branch names and PR titles. Owners: CORE = Pr
 | BRW-04 | `humancheck.py` | P0 | CP3 Modules | BRW-01 | Detects the fake check, OTP fields, password fields and the mock checkout payment page; silent on normal pages; reports when the challenge is gone |
 | BRW-05 | `sites.json` directory | P0 | CP3 Modules | BRW-01 | Entries for the mock portal, mock shop, mock search and 4 real sites (Wikipedia, a news site, a gov.in page, DuckDuckGo) with aliases, domain and trusted flag |
 | BRW-06 | Real-site tests | P1 | CP5 Full loop | BRW-03 | Snapshot and `main_text` on 3 real sites and the real search page; whether Playwright is blocked; findings and fallbacks in `docs/REAL_SITE_NOTES.md` |
-| BRW-07 | CDP attach to the user's Chrome | P2 | Freeze and demo | BRW-02 | Optional mode connects to a running Chrome; documented |
+| BRW-07 | CDP attach to the user's Chrome | P1 stretch | Freeze and demo | BRW-02 | Optional mode connects to a running Chrome with the same `BrowserController` interface; launch steps that work on the demo machine documented (recent Chrome restricts remote debugging on the default profile); Task D works on the real Gmail inbox: open inbox, open newest message, `main_text` reads it; `gmail` and `my mail` aliases in `sites.json` with `trusted: false` |
 | BRW-08 | Irreversible-control flagging | P0 | CP3 Modules | BRW-03 | Every button and submit input gets `irreversible` and `kind` from text, form submit type and target hints (submit, pay, buy, place order, send, post, delete, accept); unit tests across all mock pages with no missed irreversible control |
-| BRW-09 | Mock open-web pages | P1 | CP4 First end to end | BRW-01 | `mock_site/web/`: search results page reading `?q=`, an article page, a shop with product list, cart and checkout (payment form for the hand-off); work with `SEARCH_URL` pointed at the mock search |
+| BRW-09 | Mock open-web pages | P1 | CP4 First end to end | BRW-01 | `mock_site/web/`: search results page reading `?q=`, an article page, a shop with product list, cart and checkout (payment form for the hand-off); work with `SEARCH_URL` pointed at the mock search; also a mock inbox and message page for offline Task D tests |
 
 ### Jev, verification and demo (M4, label `role:jev-demo`)
 
