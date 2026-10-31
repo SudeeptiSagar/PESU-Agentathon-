@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -210,3 +211,73 @@ def test_caller_cannot_override_the_logger_timestamp(log_path):
     assert event["kind"] == "real"
     assert event["ts"] != "fake"
     assert datetime.fromisoformat(event["ts"]).tzinfo is not None
+
+
+def test_kind_is_positional_only(log_path):
+    # The first parameter is positional-only, so "kind" is free for callers to use as a field.
+    with pytest.raises(TypeError):
+        audit.log_event(kind="click")
+    assert not log_path.exists()
+
+
+def test_a_field_named_kind_is_kept_as_field_kind(log_path):
+    audit.log_event("click", kind="submit", label="Place order")
+
+    event = _events(log_path)[0]
+    assert event["kind"] == "click"          # the event type keeps "kind"
+    assert event["field_kind"] == "submit"   # the caller's field is not dropped
+    assert event["label"] == "Place order"
+
+    raw = _text(log_path)
+    assert '"kind":"click"' in raw
+    assert '"field_kind":"submit"' in raw
+
+
+def test_kind_and_an_explicit_field_kind_both_survive(log_path):
+    audit.log_event("click", kind={"control": "submit"}, field_kind="secondary")
+
+    event = _events(log_path)[0]
+    assert event["kind"] == "click"
+    assert event["field_kind"] == "secondary"
+    assert event["field_kind_2"] == {"control": "submit"}
+
+
+# Every event app/agent.py writes through _audit(), with representative values.
+M1_EVENTS = [
+    ("task_start", {"goal": "find out where Kalpana Chawla was born"}),
+    ("step", {"n": 3, "action": "click", "status": "ok", "domain": "demo.local"}),
+    ("held", {"label": "Place order", "control": "submit"}),
+    ("held", {"label": "Place order", "control": {"kind": "submit", "label": "Place order"}}),
+    ("confirm", {"status": "confirmed", "label": "Place order", "domain": "demo.local"}),
+    ("confirm", {"status": "cancelled", "label": None, "domain": None}),
+    ("stop", {}),
+    ("domain_approved", {"domain": "demo.local"}),
+    ("human_check", {"challenge": "captcha"}),
+    ("gate", {"action": "click", "decision": "ask_user", "reason": "it spends money"}),
+]
+M1_EVENT_IDS = [f"{index}-{name}" for index, (name, _) in enumerate(M1_EVENTS)]
+
+
+@pytest.mark.parametrize("event, fields", M1_EVENTS, ids=M1_EVENT_IDS)
+def test_m1_event_names_and_fields_are_logged_intact(log_path, event, fields):
+    audit.log_event(event, **fields)
+
+    records = _events(log_path)
+    assert len(records) == 1
+    record = records[0]
+
+    assert record["kind"] == event
+    assert datetime.fromisoformat(record["ts"]).tzinfo is not None
+    # Nothing is dropped, renamed or merged: exactly the caller's fields, no extras.
+    assert set(record) - {"ts", "kind"} == set(fields)
+    for key, value in fields.items():
+        assert record[key] == value
+
+
+def test_log_path_stays_in_the_gitignored_project_audit_dir():
+    # Owner decision: runtime data stays on the project drive, in .audit/, never committed.
+    assert Path(audit.LOG_PATH) == Path(config.ROOT) / ".audit" / "audit.jsonl"
+    gitignore = (Path(config.ROOT) / ".gitignore").read_text(encoding="utf-8")
+    assert ".audit/" in {line.strip() for line in gitignore.splitlines()}
+
+
