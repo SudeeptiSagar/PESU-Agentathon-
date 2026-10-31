@@ -19,7 +19,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 
-from app import agent, config, tools
+from app import agent, config, onboarding, profile, tools
 from app.browser import BrowserController
 from app.session import Context, Session
 from app.voice import PiperTTS
@@ -60,6 +60,7 @@ class Hub:
     """The one shared Context and the Console sockets that currently listen to it."""
 
     def __init__(self, browser_factory) -> None:
+        self.unlock_started = False
         self.sockets: set[WebSocket] = set()
         self.ctx = Context(session=Session(), send=self.broadcast,
                            tts=PiperTTS() if config.TTS_BACKEND == "piper" else None,
@@ -72,11 +73,34 @@ class Hub:
             except Exception:       # that Console went away
                 self.sockets.discard(ws)
 
+    def begin_unlock(self) -> None:
+        """Once per app start, when the first Console connects: unlock the saved profile with the user's PIN, or
+        set one up if there is none. The questions are M2's (onboarding.py, UI-07); they use ctx.listen()."""
+        if self.unlock_started or self.ctx.session.profile:
+            return
+        self.unlock_started = True
+        self.ctx.setup_task = asyncio.create_task(self._unlock())
+
+    async def _unlock(self) -> None:
+        try:
+            if profile.profile_exists():
+                await onboarding.run_unlock(self.ctx)
+            else:
+                await onboarding.run_onboarding(self.ctx)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:      # never put the PIN or any profile value in a message
+            log.warning("profile setup failed: %s", type(e).__name__)
+            await self.ctx.emit("alert", level="warning", message=(
+                "I could not open your saved details. I can still browse for you, but I can't fill in forms."))
+
     async def shutdown(self) -> None:
-        task, self.ctx.task = self.ctx.task, None
-        if task is not None and not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        for name in ("task", "setup_task"):
+            task = getattr(self.ctx, name)
+            setattr(self.ctx, name, None)
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
         if self.ctx.browser is not None:
             with contextlib.suppress(Exception):
                 await self.ctx.browser.close()
@@ -183,6 +207,7 @@ async def ws_console(ws: WebSocket) -> None:
     hub.sockets.add(ws)
     try:
         await ws.send_json({"type": "state", "name": hub.ctx.session.state})
+        hub.begin_unlock()
         while True:
             try:
                 msg = await ws.receive_json()
