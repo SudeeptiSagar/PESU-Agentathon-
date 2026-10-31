@@ -1,0 +1,56 @@
+/* Mock open-web pages (search, article, shop, inbox). Plain, no external assets. */
+* { box-sizing: border-box; }
+body { margin: 0; font: 17px/1.5 system-ui, sans-serif; background: #fafafa; color: #1a1a1a; }
+a { color: #1a4fb5; }
+header.site { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; padding: 12px 24px;
+  background: #fff; border-bottom: 1px solid #ddd; }
+header.site .brand { font-weight: 700; font-size: 1.2rem; color: #1a1a1a; text-decoration: none; }
+header.site nav a { margin-right: 16px; }
+main { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+footer.site { max-width: 900px; margin: 40px auto; padding: 16px; border-top: 1px solid #ddd; font-size: 0.85rem; color: #555; }
+button, .button { font: inherit; padding: 8px 16px; border-radius: 4px; border: 1px solid #1a4fb5;
+  background: #1a4fb5; color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
+button.secondary { background: #fff; color: #1a4fb5; }
+.muted { color: #555; font-size: 0.9rem; }
+
+/* Search */
+form.search { display: flex; gap: 8px; }
+form.search input { flex: 1; font: inherit; padding: 8px; border: 1px solid #888; border-radius: 4px; }
+.result { margin: 20px 0; }
+.result h2 { margin: 0; font-size: 1.1rem; }
+.result .url { color: #1d6b2f; font-size: 0.85rem; }
+.result .snippet { margin: 4px 0 0; }
+.result.ad { background: #fffbe6; padding: 8px; border-radius: 4px; }
+
+/* Article */
+.layout { display: grid; grid-template-columns: 1fr 220px; gap: 24px; }
+@media (max-width: 700px) { .layout { grid-template-columns: 1fr; } }
+aside.sidebar { font-size: 0.9rem; border-left: 1px solid #ddd; padding-left: 16px; }
+.infobox { border: 1px solid #ccc; background: #f3f3f3; padding: 8px 12px; margin-bottom: 16px; }
+.infobox th { text-align: left; padding-right: 8px; vertical-align: top; }
+.cookie { position: fixed; bottom: 0; left: 0; right: 0; background: #222; color: #fff; padding: 12px 24px; }
+.cookie[hidden] { display: none; }
+
+/* Shop */
+.products { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.product { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 16px; }
+.product .price { font-weight: 700; }
+table.cart { width: 100%; border-collapse: collapse; background: #fff; }
+table.cart th, table.cart td { border-bottom: 1px solid #ddd; padding: 8px; text-align: left; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-weight: 600; }
+.field input, .field textarea { width: 100%; font: inherit; padding: 6px; border: 1px solid #888; border-radius: 4px; }
+.field input[aria-invalid="true"], .field textarea[aria-invalid="true"] { border-color: #b00020; }
+.error { color: #b00020; font-size: 0.9rem; margin: 2px 0 0; }
+.error:empty { display: none; }
+fieldset { border: 1px solid #ccc; border-radius: 6px; margin-bottom: 16px; }
+
+/* Mail */
+.mail-layout { display: grid; grid-template-columns: 160px 1fr; gap: 16px; }
+.mail-layout nav a { display: block; padding: 4px 0; }
+table.inbox { width: 100%; border-collapse: collapse; background: #fff; }
+table.inbox td { border-bottom: 1px solid #eee; padding: 8px; }
+table.inbox tr.unread td { font-weight: 700; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.message-head { border-bottom: 1px solid #ddd; margin-bottom: 12px; }
+.message-body { white-space: pre-wrap; background: #fff; padding: 16px; border: 1px solid #ddd; border-radius: 4px; }

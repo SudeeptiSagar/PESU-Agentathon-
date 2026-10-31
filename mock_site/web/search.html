@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MockSearch</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="search.html">MockSearch</a>
+    <form class="search" role="search" action="search.html" method="get">
+      <label for="q" class="muted">Search</label>
+      <input id="q" name="q" type="search">
+      <button type="submit">Search</button>
+    </form>
+  </header>
+  <main>
+    <p id="summary" class="muted" aria-live="polite">Type a question and press Search.</p>
+    <ol id="results" aria-label="Search results" style="list-style:none;padding:0"></ol>
+  </main>
+  <footer class="site">MockSearch is an offline search page for the Agentathon demo. Results are fixed.</footer>
+  <script src="search.js"></script>
+</body>
+</html>
