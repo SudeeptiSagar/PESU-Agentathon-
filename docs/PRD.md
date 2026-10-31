@@ -395,7 +395,10 @@ class ToolExecutor:
 #  refuses ids that are not in the last snapshot, and clears them after any click or navigation.
 #  press_key accepts only Enter, Tab, Shift+Tab, Escape, arrows, PageUp/Down, Home, End, Space; Enter and
 #  Space are refused when they would submit a form or press an irreversible control.
-def resolve_target(target: str) -> dict                     # {"url","domain","site_id"|None,"trusted"}
+def resolve_target(target: str) -> dict                     # {"url","domain","site_id"|None,"trusted","kind"}
+#  kind: site (sites.json id/alias, filler words like "open the ... please" ignored) | url | domain
+#  | search (url is None: not a destination, the agent should use web_search). Non-web schemes,
+#  URLs with a username and bad ports are never resolved.
 def domain_allowed(domain: str) -> bool
 async def commit_pending(session: Session, browser) -> str  # state machine only: needs state COMMITTING, confirmed, pending_action; presses the stored selector once
 
