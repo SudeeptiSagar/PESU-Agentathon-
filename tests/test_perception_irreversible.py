@@ -32,6 +32,9 @@ EXPECTED = {
     "web/checkout.html": {"Place order": (True, "pay")},
     "web/order.html?order=AS-1&total=10": {},
     "web/inbox.html": {"Compose": OTHER},
+    # Sign-in and code pages are human-only (humancheck); their form submits are still held.
+    "web/login.html": {"Sign in": (True, "submit")},
+    "web/otp.html": {"Verify": (True, "submit")},
     "web/message.html?id=4": {"Reply": OTHER, "Forward": OTHER, "Delete": (True, "delete")},
     "web/message.html?id=4#reply": {"Reply": OTHER, "Forward": OTHER, "Delete": (True, "delete"),
                                     "Send": (True, "send")},

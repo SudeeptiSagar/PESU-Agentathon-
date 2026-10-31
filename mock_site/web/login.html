@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in - MockMail</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="login.html">MockMail</a>
+  </header>
+  <main>
+    <h1>Sign in</h1>
+    <p class="muted">Mock sign-in page. Any email and password work; nothing is checked or stored.</p>
+    <form id="login" novalidate>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <p class="error" id="login-error" role="alert"></p>
+      <button type="submit" id="sign-in">Sign in</button>
+    </form>
+  </main>
+  <script>
+    document.getElementById("login").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var ok = document.getElementById("email").value.trim() && document.getElementById("password").value;
+      document.getElementById("login-error").textContent = ok ? "" : "Enter your email and password.";
+      if (ok) location.href = "otp.html";
+    });
+  </script>
+</body>
+</html>

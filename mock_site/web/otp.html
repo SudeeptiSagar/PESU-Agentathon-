@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verify it's you - MockMail</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="login.html">MockMail</a>
+  </header>
+  <main>
+    <h1>Verify it's you</h1>
+    <p>We sent a 6-digit code to your phone ending in 3210. (Mock page: any 6 digits work.)</p>
+    <form id="otp-form" novalidate>
+      <div class="field">
+        <label for="otp">One-time code</label>
+        <input id="otp" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+      </div>
+      <p class="error" id="otp-error" role="alert"></p>
+      <button type="submit" id="verify">Verify</button>
+    </form>
+  </main>
+  <script>
+    document.getElementById("otp-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var ok = /^\d{6}$/.test(document.getElementById("otp").value.trim());
+      document.getElementById("otp-error").textContent = ok ? "" : "Enter the 6-digit code.";
+      if (ok) location.href = "inbox.html";
+    });
+  </script>
+</body>
+</html>
