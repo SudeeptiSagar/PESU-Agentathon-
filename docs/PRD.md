@@ -401,6 +401,11 @@ async def commit_pending(session: Session, browser) -> str  # state machine only
 
 # agent.py (M1)
 async def handle_utterance(text: str, ctx) -> None          # entry point from main.py
+#  Returns quickly: commands (stop, pause, continue, repeat, where, help, confirm, done, back, yes, no) are
+#  handled in code first; anything else starts a task or is passed to the running one. The loop runs as a
+#  background asyncio task (ctx.task), so "stop" is never stuck behind a step. Only the word "confirm"
+#  presses a held action. Context gains: browser_factory (starts the browser on "open chrome" or the first
+#  task), executor, task, last_spoken, question, notes, approved_action.
 async def run_task(ctx) -> None                             # loop, max MAX_STEPS
 async def stop(ctx) -> None                                 # halts within one step
 
