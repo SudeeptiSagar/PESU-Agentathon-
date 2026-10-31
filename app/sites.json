@@ -1,0 +1,9 @@
+[
+  {"id": "demo_portal", "aliases": ["pension portal", "demo portal", "government portal"],
+   "url": "http://localhost:8000/portal/index.html", "domain": "localhost", "trusted": true,
+   "notes": "Mock disability pension application with a planted PIN-code trap"},
+  {"id": "demo_shop", "aliases": ["demo shop", "shop"],
+   "url": "http://localhost:8000/web/shop.html", "domain": "localhost", "trusted": true},
+  {"id": "wikipedia", "aliases": ["wikipedia", "wiki"],
+   "url": "https://en.wikipedia.org", "domain": "en.wikipedia.org", "trusted": false}
+]
