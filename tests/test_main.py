@@ -92,6 +92,7 @@ def test_health_reports_the_setup():
 
 def test_unbuilt_console_shows_the_placeholder(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "DIST_DIR", tmp_path / "missing")
+    monkeypatch.setattr(main, "CONSOLE_FILE", tmp_path / "missing.html")
     client = TestClient(app)
     page = client.get("/console")
     assert page.status_code == 200 and "Voice Console" in page.text and "npm run build" in page.text
@@ -105,12 +106,33 @@ def test_built_console_is_served_with_its_assets(monkeypatch, tmp_path):
     (tmp_path / "assets" / "console-abc.css").write_text("body{}", encoding="utf-8")
     (tmp_path / "secret.txt").write_text("not for the web", encoding="utf-8")
     monkeypatch.setattr(main, "DIST_DIR", tmp_path)
+    monkeypatch.setattr(main, "CONSOLE_FILE", tmp_path / "missing.html")     # only the dist copy exists
     client = TestClient(app)
     assert "Built Console" in client.get("/console").text
     js = client.get("/assets/console-abc.js")
     assert js.status_code == 200 and js.headers["content-type"].startswith("text/javascript")
     assert client.get("/assets/console-abc.css").headers["content-type"].startswith("text/css")
     assert client.get("/health").json()["console_built"] is True
+
+
+def test_the_committed_self_contained_console_is_served_even_when_nothing_was_built(monkeypatch, tmp_path):
+    """A demo laptop without Node (so no client/dist) must still get the real Console, not the placeholder."""
+    monkeypatch.setattr(main, "DIST_DIR", tmp_path / "no_dist")
+    page = TestClient(app).get("/console")
+    assert page.status_code == 200
+    assert "PESU Agent Voice Console" in page.text and "placeholder" not in page.text.lower()
+    assert "assistant-ball" in page.text or "orb" in page.text            # the Console's own code is inline
+    assert TestClient(app).get("/health").json()["console_built"] is True
+
+
+def test_the_self_contained_page_wins_over_the_asset_copy(monkeypatch, tmp_path):
+    (tmp_path / "console.html").write_text("<title>Dist copy</title>", encoding="utf-8")
+    (tmp_path / "inline.html").write_text("<title>Self-contained copy</title>", encoding="utf-8")
+    monkeypatch.setattr(main, "DIST_DIR", tmp_path)
+    monkeypatch.setattr(main, "CONSOLE_FILE", tmp_path / "inline.html")
+    assert "Self-contained copy" in TestClient(app).get("/console").text
+    (tmp_path / "inline.html").unlink()
+    assert "Dist copy" in TestClient(app).get("/console").text             # falls back to the asset copy
 
 
 @pytest.mark.parametrize("path", ["/assets/missing.js", "/assets/%2e%2e/secret.txt", "/assets/..%2fsecret.txt",

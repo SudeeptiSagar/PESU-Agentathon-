@@ -1,7 +1,57 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import CrystalizedBall from "./src/components/CrystalizedBall.jsx";
 import "./console.css";
+
+// The orb is decoration. It draws with WebGL, which some laptops and automation browsers do not have. If it cannot be
+// drawn, show a plain glowing circle instead; the input box, speech, keys and activity panel must never depend on it.
+// Software WebGL (SwiftShader, llvmpipe, "Basic Render Driver") runs 16,000 particles far too slowly: the page freezes
+// and the input box with it. Treat it like no WebGL.
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|software|basic render|microsoft basic/i;
+
+function webglAvailable() {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (!gl) return false;
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+    return !SOFTWARE_RENDERER.test(renderer);
+  } catch {
+    return false;
+  }
+}
+
+// /console?orb=off always shows the plain circle; ?orb=on forces the WebGL orb; the default decides by itself.
+function orbWanted() {
+  const choice = new URLSearchParams(window.location.search).get("orb");
+  if (choice === "off") return false;
+  if (choice === "on") return true;
+  return webglAvailable();
+}
+
+class OrbBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn("Orb disabled, using the plain circle:", error?.message || error);
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+function PlainOrb({ color }) {
+  return <span className="plain-orb" style={{ "--plain-orb": color }} aria-hidden="true" />;
+}
 
 const REDACTED_INPUT = "Sensitive entry sent";
 const BROWSER_TTS_ENABLED =
@@ -262,6 +312,7 @@ function AssistantOrb() {
   }, []);
 
   const { connection, send } = useConsoleSocket(handleEvent);
+  const canDrawOrb = useMemo(orbWanted, []);
 
   const sendDraft = useCallback(() => {
     const text = draft.trim();
@@ -344,17 +395,23 @@ function AssistantOrb() {
         onClick={() => setActivityOpen((open) => !open)}
       >
         <span className="orb-aura" aria-hidden="true" />
-        <CrystalizedBall
-          className="assistant-ball"
-          preset={orb.preset}
-          color={orb.color}
-          size={0.78}
-          particleCount={16000}
-          speed={phase === "thinking" ? 1.15 : 0.72}
-          interactive={false}
-          intro={false}
-          paused={phase === "paused"}
-        />
+        {canDrawOrb ? (
+          <OrbBoundary fallback={<PlainOrb color={orb.color} />}>
+            <CrystalizedBall
+              className="assistant-ball"
+              preset={orb.preset}
+              color={orb.color}
+              size={0.78}
+              particleCount={16000}
+              speed={phase === "thinking" ? 1.15 : 0.72}
+              interactive={false}
+              intro={false}
+              paused={phase === "paused"}
+            />
+          </OrbBoundary>
+        ) : (
+          <PlainOrb color={orb.color} />
+        )}
       </button>
 
       <input
