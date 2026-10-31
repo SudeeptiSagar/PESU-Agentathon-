@@ -1,6 +1,6 @@
 # JEV-01: Jev and jevals research and backend decision
 
-Status: research complete, backend decision made. Live Jev smoke test is blocked on a fresh API key (see section 9).
+Status: research complete, backend decision made. `rules` is the default gate and `jev` is opt-in; the live System One call passed on 31 Oct 2026 (Sections 9 and 10).
 Owner: Abhishek (M4). Decision recorded Sat 31 Oct 2026, 21:45 IST (the 19:00 deadline was missed because the first key we found was expired).
 
 ## 1. What Jev is
@@ -55,9 +55,9 @@ Body for our gate:
   "state": {
     "goal": "Apply for the disability pension on the demo portal",
     "domain": "localhost",
-    "action": {"tool": "click", "args": {"element_id": "b4"}},
+    "action": {"name": "click", "args": {"element_id": "b4"}},
     "element": {"label": "Submit application", "kind": "submit", "irreversible": true},
-    "recent": ["read_page: summary", "fill_field: {pin_code}"]
+    "history_tail": ["1. read_page(mode=main_text) -> summary", "2. fill_field(field_id=f4, value={pin_code}) -> filled"]
   },
   "questions": {
     "serves_goal": {
@@ -129,7 +129,7 @@ r.raise_for_status()
 p = r.json()["answers"]["serves_goal"]["noul"]
 ```
 
-The production code lives in `app/gate.py` and is unit-tested against a mocked response. The live smoke test will be `tests/e2e/jev_live_check.py` once a key exists.
+The production code lives in `app/gate.py` and is unit-tested against a mocked response. The live smoke test is `tests/test_gate_live.py`; it passed on 31 Oct 2026 (Section 9).
 
 ## 5. Cost
 
@@ -202,7 +202,7 @@ Why we are not adopting jevals for this hackathon:
 | Backend | What it does | When to use |
 |---|---|---|
 | `rules` | Deterministic risk classes, domain policy, irreversible hold, first-sensitive-fill ask | Default for the demo. Works offline, no key, no latency. |
-| `jev` | Adds semantic goal and target checks through OpenCode Zen | Use when a fresh `JEV_API_KEY` exists and the network is healthy. |
+| `jev` | Adds semantic goal and target checks through OpenCode Zen | Opt-in. Sends the state listed in Section 10 to a hosted service. Use when a valid `JEV_API_KEY` exists, the network is healthy, and the disclosure is acceptable. |
 | `llm` | Asks the local Ollama model for the same three probabilities as strict JSON | Last-resort semantic check when Jev is unavailable; slower and less calibrated. |
 
 The gate never needs Jev to satisfy the safety guarantees. Jev is a semantic second opinion, not the guarantee. The guarantees are the deterministic gate, the irreversible-action hold, the verifier, the read-back and the user's confirm.
@@ -231,7 +231,7 @@ What this means:
 
 - `app/gate.py` is built against the real System One `state` + `questions` wire format, not an OpenAI chat shape.
 - The live smoke test is `tests/test_gate_live.py`. It skips unless `JEV_API_KEY` is set, so the normal suite stays offline.
-- To use Jev for the demo, put the OpenCode Console OAuth access token in the gitignored `.env` as `JEV_API_KEY` and set `GATE_BACKEND=jev`. The token used for the live check is valid until 20 Nov 2026. A fresh API key from OpenCode Console also works.
+- To enable the opt-in `jev` backend, put an OpenCode Console token in the gitignored `.env` as `JEV_API_KEY` and set `GATE_BACKEND=jev`. The token used for the live check is valid until 20 Nov 2026. A fresh API key from OpenCode Console also works. The demo itself runs `rules` and needs neither.
 - The token is a bearer credential. Never put it in chat, an issue, a commit, the Console or the audit log. `.env` is gitignored.
 - The direct TypeSafe route still has no key. It is not needed; the OpenCode Zen route works with the same System One shape.
 
@@ -247,16 +247,51 @@ Live calibration observed on 31 Oct 2026 with `jev-1.13-free`:
 
 The optional `page` key in the gate context (a title or one-line summary) materially improves goal fit. M1's agent loop should pass it when it has one. Read-only actions and `go_back` skip the semantic call because Jev has no target to judge and otherwise creates false asks. Injection is a separate hard block at 0.5; a low injection probability no longer shaves the action score.
 
-## 10. Privacy and prompt-injection rules for the Jev state
+## 10. What leaves the machine
 
-- Jev never sees a real profile value. The state contains placeholders such as `{aadhaar}`, labels and field ids, not values.
+Jev is **opt-in**. `GATE_BACKEND` defaults to `rules` (`app/config.py:79`), and with `rules` nothing leaves the machine: the gate is local code, there is no key and no account, speech and the model run on the demo machine, and the only outbound traffic is the pages the browser visits.
+
+When `GATE_BACKEND=jev` is set and `JEV_API_KEY` is present, `app/gate.py` sends one HTTPS `POST` per gated action to **https://opencode.ai/zen/v1/systemone** (`gate.py:37`). That is a hosted service: OpenCode Zen, serving TypeSafe's System One model `jev-1.13-free`. The state part of the body is built by `_safe_state()` (`gate.py:446`) and contains exactly these fields:
+
+| Field | What it carries | Bounds |
+|---|---|---|
+| `goal` | the user's own task sentence, as spoken or typed. A user who says "email Rahul about my test results" would have that sentence sent. | 300 characters |
+| `action.name` | the tool name, for example `navigate`, `click` or `fill_field` | 60 characters |
+| `action.args` | the tool arguments with sensitive keys removed: a navigate target URL, a search query, a placeholder such as `{pin_code}` | `text`, `query`, `question`, `summary` cut to 200 characters; every string redacted; lists cut to 12 items; nesting cut at 4 levels |
+| `element.label` | the visible label or text of the target element | 120 characters |
+| `element.type`, `element.kind` | the field type and the risk kind, for example `submit` | 40 characters each |
+| `element.irreversible` | true or false | - |
+| `domain` | the normalized hostname only, with no path, query string or port | 120 characters |
+| `history_tail` | the last three step lines, each of the form `tool(args) -> first line of the result` | 200 characters each |
+| `page` (optional) | a page title or one-line summary, only when the agent loop supplies one | 300 characters |
+
+The model id and the three typed questions travel with it. Nothing else does. In particular, the request never carries:
+
+- The profile object, or any real profile value. `aadhaar`, `bank_account`, `ifsc` and `pin` (from `config.SENSITIVE_KEYS`), plus `phone`, `address`, `password`, `otp`, `card_number`, `cvv`, `cvc` and `value`, are dropped from the state before the request is built.
+- `element["value"]`, the value typed into the field. It is deliberately never copied.
+- Full page content and screenshots. A history line can quote the first line of a tool result, which may be page text, so treat the history tail as page-derived data.
+- Numbers and codes the redaction catches: any run of four or more digits, and any IFSC-shaped string, becomes `[redacted]` first (`_redact`, `gate.py:403`). That covers a PIN, a phone number, an Aadhaar number, an account number and a date.
+
+The API key is not in the body. It travels only in the `Authorization` header, and is never written to the state, the logs or the audit log.
+
+Placeholders such as `{aadhaar}` or `{pin_code}` may be sent, in the arguments or in a history line. They are field labels, not values.
+
+Operational facts:
+
+- The call is made only for actions that change state or pick a target: `navigate`, `web_search`, `click`, `type_text`, `fill_field`, `select_option`, `press_key`. Read-only and meta actions (`read_page`, `scroll`, `switch_tab`, `go_back`, `finish`, `speak`, `ask_user`) make no call.
+- Free text the user dictated for `type_text`, such as a message body, is sent, cut to 200 characters. Redaction still masks digit runs of four or more.
+- The timeout is 6 seconds (`gate.py:39`). A timeout, an auth error or a malformed response falls back to the rules result. Jev never turns a rules `block` or `ask_user` into a `proceed`.
+- The provider's retention and training policy is a third-party question we have not verified. Treat the request as leaving the trust boundary. If that is not acceptable for the data in a task, keep `rules`.
+- The `llm` backend does not leave the machine when `OLLAMA_URL` points at the local Ollama (the default). It sends the same state, which still holds no real value.
+
+## 11. Prompt-injection rules and what the score does not prove
+
 - Page text and tool results are untrusted data. The `follows_page_instruction` question exists to catch an action that follows a page instruction rather than the user's goal.
-- The state drops any key in `config.SENSITIVE_KEYS` and never includes `session.profile`.
-- The only user text in the state is the goal and, for `type_text`, the text the user or task supplied. That text is truncated to 200 characters.
+- The only user text in the state is the goal and, for `type_text`, the text the user or task supplied. Section 10 lists every field.
 - An injected page instruction cannot change the gate backend, the thresholds or the action list. Those are code, not page content.
 - Jev's probability is not independent proof. A high score does not unlock an irreversible action; the hold and the user's "confirm" still do.
 
-## 11. What the tests prove
+## 12. What the tests prove
 
 `tests/test_gate.py` (offline, no network) covers:
 
