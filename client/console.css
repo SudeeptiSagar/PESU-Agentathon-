@@ -130,6 +130,36 @@ input {
   white-space: nowrap;
 }
 
+.capture-input--visible {
+  top: auto;
+  right: 16px;
+  bottom: clamp(24px, 6vh, 56px);
+  left: 50%;
+  width: min(760px, calc(100vw - 32px));
+  height: auto;
+  min-height: 64px;
+  padding: 14px 20px;
+  overflow: hidden;
+  transform: translateX(-50%);
+  border: 1px solid rgba(207, 226, 240, 0.48);
+  border-radius: 18px;
+  outline: none;
+  background: #101722;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.58);
+  color: #f5f9fc;
+  opacity: 1;
+  clip: auto;
+  clip-path: none;
+  font-size: 20px;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.capture-input--visible:focus-visible {
+  outline: 3px solid #effffb;
+  outline-offset: 3px;
+}
+
 .activity-panel {
   position: fixed;
   z-index: 5;
@@ -148,6 +178,11 @@ input {
   scrollbar-color: rgba(194, 211, 227, 0.22) transparent;
   scrollbar-width: thin;
   backdrop-filter: blur(24px);
+}
+
+.activity-panel:focus-visible {
+  outline: 3px solid #effffb;
+  outline-offset: 4px;
 }
 
 .activity-heading {
@@ -211,27 +246,37 @@ input {
 }
 
 .field-table {
+  width: 100%;
+  border-spacing: 0;
+  border-collapse: separate;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 9px;
+  text-align: left;
 }
 
-.field-row {
-  display: grid;
-  grid-template-columns: minmax(72px, 1fr) minmax(80px, 1fr) auto;
-  gap: 10px;
-  padding: 9px;
+.field-table th,
+.field-table td {
+  padding: 9px 7px;
+  border-bottom: 1px solid var(--line);
   color: #dbe5eb;
   font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
-.field-row + .field-row {
-  border-top: 1px solid var(--line);
+.field-table thead th {
+  color: #f3f7fa;
+  font-weight: 650;
 }
 
-.field-row > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.field-table tbody th {
+  font-weight: 600;
+}
+
+.field-table tr:last-child th,
+.field-table tr:last-child td {
+  border-bottom: 0;
 }
 
 .step-list,
@@ -317,5 +362,16 @@ input {
     border-color: CanvasText;
     background: Canvas;
     color: CanvasText;
+  }
+
+  .capture-input--visible {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .capture-input--visible:focus-visible,
+  .activity-panel:focus-visible {
+    outline: 2px solid Highlight;
   }
 }

@@ -112,7 +112,12 @@ function useConsoleSocket(onEvent) {
 
 function Activity({ steps, transcript, fields, pending, alerts, connection }) {
   return (
-    <section className="activity-panel" aria-label="Assistant activity">
+    <section
+      id="activity-panel"
+      className="activity-panel"
+      aria-label="Assistant activity"
+      tabIndex={0}
+    >
       <div className="activity-heading">
         <span className={`connection-dot connection-dot--${connection}`} />
         <span>{connection === "connected" ? "Connected" : "Reconnecting"}</span>
@@ -138,15 +143,24 @@ function Activity({ steps, transcript, fields, pending, alerts, connection }) {
       {fields.length > 0 && (
         <section className="activity-block" aria-label="Masked page fields">
           <h2>Fields</h2>
-          <div className="field-table" role="table" aria-label="Masked fields">
-            {fields.slice(0, 8).map((field, index) => (
-              <div className="field-row" role="row" key={`${field.label}-${index}`}>
-                <span role="cell">{field.label || "Field"}</span>
-                <span role="cell">{field.value_masked || "Hidden"}</span>
-                <span role="cell">{field.status || ""}</span>
-              </div>
-            ))}
-          </div>
+          <table className="field-table" aria-label="Masked fields">
+            <thead>
+              <tr>
+                <th scope="col">Field</th>
+                <th scope="col">Masked value</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fields.slice(0, 8).map((field, index) => (
+                <tr key={`${field.label}-${index}`}>
+                  <th scope="row">{field.label || "Field"}</th>
+                  <td>{field.value_masked || "Hidden"}</td>
+                  <td>{field.status || "Unknown"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
 
@@ -167,7 +181,7 @@ function Activity({ steps, transcript, fields, pending, alerts, connection }) {
       {transcript.length > 0 && (
         <section className="activity-block" aria-label="Recent transcript">
           <h2>Transcript</h2>
-          <ol className="transcript-list" aria-live="polite" aria-relevant="additions text">
+          <ol className="transcript-list">
             {transcript.slice(-6).reverse().map((item, index) => (
               <li key={`${index}-${item.role}-${item.text}`}>
                 <span>{item.role === "assistant" ? "Agent" : "You"}</span>
@@ -187,6 +201,8 @@ function AssistantOrb() {
   const [status, setStatus] = useState({ phase: "ready", label: "Ready" });
   const [draft, setDraft] = useState("");
   const [inputMode, setInputMode] = useState("voice");
+  const [inputExpanded, setInputExpanded] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [steps, setSteps] = useState([]);
   const [transcript, setTranscript] = useState([]);
@@ -195,6 +211,11 @@ function AssistantOrb() {
   const [pending, setPending] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [announcement, setAnnouncement] = useState("Ready");
+  const suppressInitialFocusReveal = useRef(true);
+  const browserTtsAvailable =
+    BROWSER_TTS_ENABLED &&
+    "speechSynthesis" in window &&
+    typeof SpeechSynthesisUtterance === "function";
 
   const handleEvent = useCallback((event) => {
     switch (event.type) {
@@ -212,17 +233,11 @@ function AssistantOrb() {
         if (event.text) {
           const messageId = messageSequenceRef.current++;
           setStatus({ phase: "answering", label: "Answering" });
-          if (
-            BROWSER_TTS_ENABLED &&
-            "speechSynthesis" in window &&
-            typeof SpeechSynthesisUtterance === "function"
-          ) {
+          if (browserTtsAvailable) {
             window.speechSynthesis.cancel();
             window.speechSynthesis.speak(new SpeechSynthesisUtterance(event.text));
-            setAnnouncement("Answering");
-          } else {
-            setAnnouncement(event.text);
           }
+          setAnnouncement("Answering");
           setAgentMessages((current) => [...current, { id: messageId, text: event.text }].slice(-6));
           setTranscript((current) => [...current, { role: "assistant", text: event.text }].slice(-12));
         }
@@ -230,7 +245,7 @@ function AssistantOrb() {
       case "step":
         setSteps((current) => [...current, event].slice(-24));
         setStatus({ phase: "thinking", label: "Thinking" });
-        setAnnouncement([event.action, event.target, event.result].filter(Boolean).join(". ") || "Working");
+        setAnnouncement("Working");
         break;
       case "field_table":
         setFields(Array.isArray(event.fields) ? event.fields : []);
@@ -245,7 +260,7 @@ function AssistantOrb() {
         if (event.message) {
           const alert = { level: event.level || "info", message: event.message };
           setAlerts((current) => [...current, alert].slice(-8));
-          setAnnouncement(event.message);
+          setAnnouncement(event.level === "error" ? "Error" : "Alert");
           if (event.level === "error") setStatus({ phase: "error", label: "Needs attention" });
           setActivityOpen(true);
         }
@@ -261,7 +276,7 @@ function AssistantOrb() {
       default:
         break;
     }
-  }, []);
+  }, [browserTtsAvailable]);
 
   const { connection, send } = useConsoleSocket(handleEvent);
 
@@ -277,6 +292,8 @@ function AssistantOrb() {
     setAnnouncement(secret ? REDACTED_INPUT : "Request sent");
     setStatus({ phase: "thinking", label: "Thinking" });
     setDraft("");
+    setInputExpanded(false);
+    setInputFocused(false);
   }, [draft, inputMode, send]);
 
   useEffect(() => {
@@ -296,22 +313,37 @@ function AssistantOrb() {
   }, [send]);
 
   useEffect(() => {
+    // Give Handy a paste target at startup. This first programmatic focus stays
+    // visually quiet; typing or a keyboard focus action reveals the field.
     inputRef.current?.focus({ preventScroll: true });
-  }, [inputMode]);
+    suppressInitialFocusReveal.current = false;
+  }, []);
 
   const handleKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      sendDraft();
+    }
+  };
+
+  const handleMainKeyDown = (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
       sendKey("Escape");
-    } else if (event.code === "Space" && !draft.trim()) {
-      event.preventDefault();
-      sendKey("Space");
     } else if (event.altKey && event.key.toLowerCase() === "i") {
       event.preventDefault();
       setActivityOpen((open) => !open);
-    } else if (event.key === "Enter") {
+    } else if (event.altKey && event.key.toLowerCase() === "t") {
       event.preventDefault();
-      sendDraft();
+      setInputExpanded(true);
+      inputRef.current?.focus({ preventScroll: true });
+    } else if (
+      event.code === "Space" &&
+      event.target === inputRef.current &&
+      !draft.trim()
+    ) {
+      event.preventDefault();
+      sendKey("Space");
     }
   };
 
@@ -325,12 +357,36 @@ function AssistantOrb() {
         : "reconnecting";
 
   return (
-    <main className={`orb-screen orb-screen--${phase}`}>
+    <main className={`orb-screen orb-screen--${phase}`} onKeyDown={handleMainKeyDown}>
+      <input
+        ref={inputRef}
+        className={`capture-input${draft || inputExpanded || inputFocused ? " capture-input--visible" : ""}`}
+        type={inputMode === "typed_secret" ? "password" : "text"}
+        value={draft}
+        autoComplete="off"
+        spellCheck={false}
+        aria-label={inputMode === "typed_secret" ? "Sensitive entry" : "Task input"}
+        aria-describedby="input-help"
+        onFocus={() => {
+          if (!suppressInitialFocusReveal.current) setInputFocused(true);
+        }}
+        onBlur={() => setInputFocused(false)}
+        onChange={(event) => {
+          if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
+          setDraft(event.target.value);
+        }}
+        onKeyDown={handleKeyDown}
+      />
+      <span id="input-help" className="visually-hidden">
+        Handy pastes the request here. Enter sends it. Escape stops the agent. Alt plus I opens activity.
+        Alt plus T shows the task input. {inputMode === "typed_secret" ? " Typed characters are hidden." : ""}
+      </span>
       <button
         type="button"
         className="orb-button"
         aria-label={`PESU assistant. ${status.label}. Console ${connectionLabel}. Click to ${activityOpen ? "hide" : "view"} activity.`}
         aria-expanded={activityOpen}
+        aria-controls="activity-panel"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setActivityOpen((open) => !open)}
       >
@@ -348,27 +404,6 @@ function AssistantOrb() {
         />
       </button>
 
-      <input
-        ref={inputRef}
-        className="capture-input"
-        type={inputMode === "typed_secret" ? "password" : "text"}
-        value={draft}
-        autoComplete="off"
-        spellCheck={false}
-        aria-label={inputMode === "typed_secret" ? "Sensitive entry" : "Task input"}
-        aria-describedby="input-help"
-        onChange={(event) => {
-          if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
-          setDraft(event.target.value);
-        }}
-        onKeyDown={handleKeyDown}
-        onBlur={() => window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0)}
-      />
-      <span id="input-help" className="visually-hidden">
-        Handy pastes the request here. Enter sends it. Escape stops the agent. Alt plus I opens activity.
-        {inputMode === "typed_secret" ? " Typed characters are hidden." : ""}
-      </span>
-
       {activityOpen && (
         <Activity
           steps={steps}
@@ -384,7 +419,7 @@ function AssistantOrb() {
         className="visually-hidden"
         role="log"
         aria-label="Agent messages"
-        aria-live="polite"
+        aria-live={browserTtsAvailable ? "off" : "polite"}
         aria-relevant="additions"
         aria-atomic="false"
       >
@@ -393,7 +428,7 @@ function AssistantOrb() {
       <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {announcement}
       </div>
-      <div className="visually-hidden" role="alert" aria-live="assertive">
+      <div className="visually-hidden" role="alert" aria-live="assertive" aria-atomic="true">
         {alerts.at(-1)?.message || ""}
       </div>
     </main>

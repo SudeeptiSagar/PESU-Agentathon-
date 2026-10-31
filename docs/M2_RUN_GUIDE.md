@@ -153,11 +153,11 @@ Handy installation and physical microphone/headset behavior have not been tested
 This host does not have NVDA installed, so these steps are instructions rather than a claimed test result. Install the current stable NVDA release from [NV Access](https://www.nvaccess.org/download/) or run `winget install --id NVAccess.NVDA`. Start NVDA from the Windows Start menu. The default NVDA modifier is `Insert`; NVDA can also be configured to use `Caps Lock`. The [NVDA User Guide](https://api.nvaccess.org/documentation/userGuide.html) documents these commands.
 
 1. Build with browser speech enabled and start FastAPI using sections B and D. Open **http://127.0.0.1:8080/console** in Chrome or Edge.
-2. Press `NVDA+Tab` (default: `Insert+Tab`). NVDA should identify the focused control as **Task input**. The input should regain focus after a blur.
-3. Type a harmless request such as `hello accessibility test` and press `Enter`. NVDA should announce the agent's `You said: ...` response from the **Agent messages** live log. The orb should change to its answering state.
-4. Press `Escape`. NVDA should announce **Stopped.** and the Console should return to its ready state.
-5. Press `Alt+I` to open the activity panel and again to close it. Check that the connection, transcript, steps, and any alerts are announced; `NVDA+Tab` should still report the task input as focused.
-6. In Windows **Settings → Accessibility → Contrast themes**, apply a high-contrast theme and confirm the activity text and keyboard focus indicator remain visible. Restore the previous theme after checking.
+2. On startup Handy has a focused paste target. Press `Tab` to move to the orb and verify its visible focus ring. Open Activity with `Alt+I`, then press `Tab` to reach the Activity Panel. The Console must not pull focus back to the input.
+3. Press `Alt+T` from any Console control. The task input should become visible and focused. Type a harmless request such as `hello accessibility test`; inspect the text before the 900 ms debounce sends it. The visible input uses large, high-contrast text.
+4. With BrowserTTS enabled, the response is spoken by browser speech and the agent-message log is not a live region. With BrowserTTS disabled, the agent-message log announces the response once. In either mode the status region announces state changes, not a duplicate copy of the response.
+5. Press `Escape` while the input, orb, or Activity Panel has focus. NVDA should announce **Stopped.** and the Console should return to its ready state.
+6. In Windows **Settings → Accessibility → Contrast themes**, apply a high-contrast theme and confirm the input, activity text, table borders, and keyboard focus indicators remain visible. Restore the previous theme after checking.
 
 Record the NVDA version, browser, whether each announcement was heard once, any focus loss, and any contrast issue. A clean NVDA run is required before marking UI-03's screen-reader acceptance complete.
 
@@ -190,11 +190,12 @@ As of this run, steps 1 and the Console/WebSocket echo path work. The current `a
 
 ## K. Observed milestone checks (2026-10-31)
 
-- `npm run build`: passed with Vite 7.3.7; 95 modules transformed. The FastAPI page is self-contained.
-- `python -m pytest -q`: **143 passed, 1 skipped**, with one existing AnyIO/Pytest deprecation warning (24.09 s).
+- `npm run build` with `VITE_TTS_BACKEND=browser`: passed with Vite 7.3.7; 95 modules transformed. The FastAPI page is self-contained.
+- `python -m pytest -q`: **394 passed, 1 skipped**, with one existing AnyIO/Pytest deprecation warning (68.18 s).
+- `python -m compileall app tests`: passed.
 - On `ui/UI-06-voice`, `python -m pytest -q tests/test_voice.py`: **22 passed**, with the same warning.
 - Chromium/Playwright against the production FastAPI page: **passed**. Verified WebSocket connection, 900 ms debounce, Enter submission, `speak` event playback callback, speech cancellation when new input arrives, activity panel, and reconnect after a backend restart.
 - A mock Section 12 WebSocket: **passed**. Verified `state`, `speak`, `step`, `field_table`, `pending`, `alert`, `input_mode`, plus Console `utterance` and Escape `key`; the sensitive input switched to password mode.
-- UI-03 browser accessibility check: **passed** for ARIA live log, Escape, Alt+I, retained input focus, 15 px transcript text, and Windows forced-colors styling.
+- `python -m pytest -q tests/test_console_accessibility.py`: **12 passed** against both BrowserTTS and Piper production builds served by FastAPI. Covered tab order, focus retention, transcript visibility before debounce, one response announcement per mode, semantic field-table headers, Escape, contrast, and forced colors.
 - M3 `scripts/focus_test.py` in headed mode could not launch Chromium here (`BrowserType.launch: spawn UNKNOWN`). A headless run of the same five mock controls with `refocus_console()` passed **5/5 page-focus checks**. OS foreground focus remains unverified.
 - NVDA and Handy were not available, and Piper/sounddevice/model playback was not available. Screen-reader, Handy/microphone, Piper audio, and OS-level window-focus checks remain manual. These results do not claim a hardware E2E pass.
