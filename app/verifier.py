@@ -314,6 +314,15 @@ def _locator(page, selector: str):
     return page.locator(inner)
 
 
+def _is_agent_selector(selector: str) -> bool:
+    """True for M3's ephemeral [data-agent-id=...] locators.
+
+    A later snapshot removes those attributes and reassigns ids, so they must not
+    be preferred over a stable selector like #dob recorded in session.expected.
+    """
+    return "data-agent-id" in selector
+
+
 def _error_text(meta: dict, actual: str) -> str:
     """A visible validation message for this control, if any."""
     if not meta.get("visible", True):
@@ -799,27 +808,43 @@ async def _check_expected(page, session, add, reported_ids: set[str]) -> None:
         else:
             expected = {"value": raw_expected}
         expected_value = _text(expected.get("value"))
-        selector = (
-            locators.get(raw_id) or locators.get(field_id)
-            or expected.get("selector") or ""
-        )
-        if isinstance(selector, dict):
-            selector = selector.get("selector") or selector.get("value") or ""
-        selector = _text(selector).strip()
+        recorded = expected.get("selector") or ""
+        if isinstance(recorded, dict):
+            recorded = recorded.get("selector") or recorded.get("value") or ""
+        recorded = _text(recorded).strip()
+        live = locators.get(raw_id) or locators.get(field_id) or ""
+        live = _text(live).strip()
+
+        # Prefer a stable recorded selector. An ephemeral [data-agent-id] locator is
+        # invalidated by the next snapshot, so use the live locator first in that case.
+        candidates: list[str] = []
+        if recorded and not _is_agent_selector(recorded):
+            candidates.append(recorded)
+        if live:
+            candidates.append(live)
+        if recorded:
+            candidates.append(recorded)
+        unique: list[str] = []
+        for candidate in candidates:
+            if candidate and candidate not in unique:
+                unique.append(candidate)
+
         label = _collapse(expected.get("label")) or field_id
         sensitive = _is_sensitive(expected, label)
 
-        if not selector:
-            add(field_id, label, expected_value, "", "missing", sensitive)
-            continue
-
+        loc = None
         count = 0
-        try:
-            loc = _locator(page, selector)
-            count = await loc.count()
-        except Exception:
-            count = 0
-        if not count:
+        for candidate in unique:
+            try:
+                candidate_loc = _locator(page, candidate)
+                candidate_count = await candidate_loc.count()
+            except Exception:
+                candidate_count = 0
+            if candidate_count:
+                loc = candidate_loc
+                count = candidate_count
+                break
+        if not count or loc is None:
             add(field_id, label, expected_value, "", "missing", sensitive)
             continue
 
