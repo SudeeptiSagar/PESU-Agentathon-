@@ -41,10 +41,14 @@ def test_wrong_pin_raises_wrong_pin_error():
 def test_no_value_is_readable_on_disk(tmp_profile):
     save_profile(DEMO_PROFILE, "2468")
     raw = tmp_profile.read_text(encoding="utf-8")
+    # The file holds only these fields, so no profile field can be stored in plain text...
+    assert set(json.loads(raw)) == {"version", "kdf", "iterations", "salt", "token"}
+    # ...and no value of a readable length appears in the text. Very short values such as "75" are
+    # skipped: random base64 contains them by chance (about one run in nine), which says nothing.
     for key, value in DEMO_PROFILE.items():
-        assert value not in raw, f"{key} is stored in plain text"
+        if len(value) >= 6:
+            assert value not in raw, f"{key} is stored in plain text"
     assert "2468" not in raw  # the PIN is never stored
-    json.loads(raw)  # still valid JSON
 
 
 def test_sensitive_values_are_not_in_the_error_messages():

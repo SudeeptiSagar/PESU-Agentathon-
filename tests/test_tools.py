@@ -692,3 +692,58 @@ async def test_real_search_box_allows_enter_and_a_normal_link_navigates(base, re
     snap = await tools.take_snapshot(page, session)
     products = next(x for x in snap["links"] if x["text"] == "Products")
     assert (await ex.run(act("click", element_id=products["id"]), session, browser)).startswith("ok: clicked 'Products'")
+
+
+# ================================================================ the model never sees saved values (rule 1)
+import json  # noqa: E402
+from app.tools import hide_profile_text, hide_profile_values  # noqa: E402
+
+
+def test_hide_profile_text_replaces_whole_words_only():
+    p = DEMO_PROFILE
+    assert hide_profile_text("Welcome Ramesh Kumar!", p) == "Welcome [saved full_name]!"
+    assert hide_profile_text("welcome RAMESH   kumar", p) == "welcome [saved full_name]"
+    assert hide_profile_text("mail ramesh@example.com now", p) == "mail [saved email] now"
+    assert hide_profile_text("lives at 12  MG Road", p) == "lives at [saved address]"   # spacing does not matter
+    assert hide_profile_text("pin 560001 and 5600012", p) == "pin [saved pin_code] and 5600012"   # 6 digits: whole number only
+    assert hide_profile_text("call 98765 43210", p) == "call [saved phone]"
+    assert hide_profile_text("call 9876-543-210", p) == "call [saved phone]"
+    # short values ("male", "75") are left alone in running text; a saved value of 6+ characters is hidden even
+    # when the page uses the same word ("General"), the price of an absolute rule
+    assert hide_profile_text("She is female and 75% disabled in General", p) ==         "She is female and 75% disabled in [saved category]"
+    assert hide_profile_text("id 0000 1111 2222", p) == "id [hidden]"                # sensitive: always scrubbed
+    assert hide_profile_text("nothing here", {}) == "nothing here"
+
+
+def test_hide_profile_values_hides_what_the_agent_typed_whatever_the_page_shows():
+    session = Session(profile=copy.deepcopy(DEMO_PROFILE))
+    snap = {"page_title": "Hello Ramesh Kumar", "summary": "Form for Ramesh Kumar, born 1980-03-04.",
+            "headings": ["Apply"], "errors": [], "links": [{"id": "l1", "text": "Help"}], "tabs": [], "buttons": [],
+            "fields": [{"id": "f1", "label": "Full name", "value": "Ramesh Kumar"},
+                       {"id": "f2", "label": "Date of birth", "value": "04/03/1980"},          # reformatted by the page
+                       {"id": "f3", "label": "Disability %", "value": "75"},                      # short value: exact match
+                       {"id": "f4", "label": "Notes", "value": "75 years of service"},         # not a whole match: left alone
+                       {"id": "f5", "label": "Search", "value": "kalpana chawla"}]}
+    session.expected = {"f2": {"source": "profile:dob"}}
+    before = copy.deepcopy(snap)
+    out = hide_profile_values(snap, session)
+    assert snap == before                                                    # the original is untouched
+    assert out["page_title"] == "Hello [saved full_name]"
+    assert out["summary"] == "Form for [saved full_name], born [saved dob]."
+    assert [f["value"] for f in out["fields"]] == [
+        "[saved full_name]", "[saved dob]", "[saved disability_percent]", "75 years of service", "kalpana chawla"]
+    assert "Ramesh" not in json.dumps(out) and "1980" not in json.dumps(out)
+
+
+async def test_results_and_page_text_hide_saved_values(setup, monkeypatch):
+    ex, session, browser, page = setup(PORTAL_URL)
+    session.elements["l1"]["label"] = "Welcome Ramesh Kumar"
+    session.locators["l1"] = "#l1"
+    result = await ex.run(act("click", element_id="l1"), session, browser)
+    assert result == "ok: clicked 'Welcome [saved full_name]'"
+
+    async def main_text(p, max_chars=4000):
+        return "Thank you Ramesh Kumar. Your reference is 42. We will call 9876543210."
+    monkeypatch.setattr(perception, "main_text", main_text)
+    text = await ex.run(act("read_page", mode="main_text"), session, browser)
+    assert "Ramesh" not in text and "9876543210" not in text and "[saved phone]" in text

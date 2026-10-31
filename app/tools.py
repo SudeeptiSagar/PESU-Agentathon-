@@ -101,6 +101,65 @@ def scrub_sensitive(text: str, profile_data: dict) -> str:
     return text
 
 
+MIN_HIDE_LEN = 6   # shorter saved values ("75", "male") are only hidden when a whole field value equals them
+
+
+def _value_regex(value: str) -> re.Pattern:
+    """Matches a saved value as a whole word, tolerating spacing: digits may be grouped by spaces or hyphens."""
+    if re.fullmatch(r"[\d\s-]+", value):
+        body = r"[\s-]?".join(re.escape(ch) for ch in re.sub(r"[\s-]", "", value))
+    else:
+        body = r"\s+".join(re.escape(tok) for tok in value.split())
+    return re.compile(r"(?<![A-Za-z0-9])" + body + r"(?![A-Za-z0-9])", re.I)
+
+
+def hide_profile_text(text: str, profile_data: dict) -> str:
+    """Replace the user's saved values in text with [saved <key>] (hard rules 1 and 4).
+
+    Sensitive values (Aadhaar, bank, IFSC) are scrubbed first, whatever their length. Other values of
+    at least MIN_HIDE_LEN characters are replaced as whole words, longest first, so a page that
+    greets the user by name shows the model "[saved full_name]" and never the name.
+    """
+    text = scrub_sensitive(text, profile_data)
+    items = sorted(((k, str(v or "").strip()) for k, v in profile_data.items()), key=lambda kv: -len(kv[1]))
+    for key, value in items:
+        if len(value) >= MIN_HIDE_LEN and key not in config.SENSITIVE_KEYS:
+            text = _value_regex(value).sub(f"[saved {key}]", text)
+    return text
+
+
+def hide_profile_values(snap: dict, session: Session) -> dict:
+    """A copy of a snapshot that shows the model no saved value.
+
+    Fields the agent filled from the profile show [saved <key>] whatever the page displays (the page may
+    reformat a date). Every other string is run through hide_profile_text, and a field whose whole value
+    equals a short saved value is hidden too.
+    """
+    profile_data = session.profile
+    exact = {re.sub(r"\s+", " ", str(v).strip()).lower(): k for k, v in profile_data.items() if str(v or "").strip()}
+
+    def walk(node):
+        if isinstance(node, str):
+            return hide_profile_text(node, profile_data)
+        if isinstance(node, list):
+            return [walk(x) for x in node]
+        if isinstance(node, dict):
+            return {k: walk(v) for k, v in node.items()}
+        return node
+
+    out = walk(snap)
+    for original, field in zip(snap.get("fields", []), out.get("fields", [])):
+        source = session.expected.get(original["id"], {}).get("source", "")
+        value = original.get("value")
+        if source.startswith("profile:") and value:
+            field["value"] = f"[saved {source.split(':', 1)[1]}]"
+        elif isinstance(value, str) and value:
+            key = exact.get(re.sub(r"\s+", " ", value.strip()).lower())
+            if key:
+                field["value"] = f"[saved {key}]"
+    return out
+
+
 # ---------------------------------------------------------------- domain policy
 def _load_sites() -> list[dict]:
     try:
@@ -224,10 +283,14 @@ def record_snapshot(session: Session, snap: dict) -> None:
 
 
 async def take_snapshot(page, session: Session) -> dict:
-    """perception.snapshot plus record_snapshot. The agent loop uses this every step."""
+    """perception.snapshot plus record_snapshot, with saved values hidden. The agent loop uses this every step.
+
+    The returned snapshot is what the model sees, so hide_profile_values runs on it: a form field the
+    agent filled shows [saved <key>], never the value (hard rule 1).
+    """
     snap = await perception.snapshot(page, session)
     record_snapshot(session, snap)
-    return snap
+    return hide_profile_values(snap, session)
 
 
 # ---------------------------------------------------------------- executor
@@ -347,7 +410,7 @@ class ToolExecutor:
                 first = str(e).splitlines()[0] if str(e) else ""
                 result = f"error: {type(e).__name__}: {_clean(first, 150)}"
                 log.warning("tool %s failed: %s", name, type(e).__name__)
-        return scrub_sensitive(result, session.profile)
+        return hide_profile_text(result, session.profile)
 
     # ---- helpers
     def _page(self, browser):
@@ -656,7 +719,7 @@ async def commit_pending(session: Session, browser) -> str:
         await locator.click(timeout=ACTION_TIMEOUT_MS)
     except Exception as e:
         first = str(e).splitlines()[0] if str(e) else ""
-        return scrub_sensitive(f"error: {type(e).__name__}: {_clean(first, 150)}", session.profile)
+        return hide_profile_text(f"error: {type(e).__name__}: {_clean(first, 150)}", session.profile)
     try:
         await browser.active.wait_for_load_state("domcontentloaded", timeout=3000)
     except Exception:

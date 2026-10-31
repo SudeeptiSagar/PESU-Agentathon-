@@ -158,6 +158,15 @@ class Context:
     send: Send
     browser: Any = None   # browser.BrowserController
     tts: Any = None       # voice.PiperTTS for audio; None when TTS_BACKEND=browser
+    # Set by main.py (CORE-11) so "open chrome" can start the browser on demand.
+    browser_factory: Callable[[], Any] | None = None
+    # Set and used by agent.py:
+    executor: Any = None              # tools.ToolExecutor, created on first use
+    task: Any = None                  # the asyncio.Task running agent.run_task, if any
+    last_spoken: str = ""             # for "repeat"
+    question: dict | None = None      # what the user was last asked: {"type": "answer"|"approve_domain"|"gate"|"continue", ...}
+    notes: list = field(default_factory=list)   # user answers and interjections for the LLM
+    approved_action: dict | None = None         # a gated action the user said yes to
 
     async def emit(self, type: str, **payload: Any) -> None:
         """Send {"type": type, **payload} to the Voice Console."""
@@ -168,6 +177,7 @@ class Context:
 
         With TTS_BACKEND=browser the Console voices the `speak` event itself.
         """
+        self.last_spoken = text
         await self.emit("speak", text=text)
         if self.tts is not None:
             await self.tts.speak(text)
