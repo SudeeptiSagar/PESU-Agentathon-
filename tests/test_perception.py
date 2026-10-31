@@ -17,7 +17,7 @@ from app.session import Session  # noqa: E402
 MOCK_SITE = Path(__file__).resolve().parent.parent / "mock_site"
 MOCK_PAGES = ["portal/index.html", "portal/apply.html", "portal/help.html", "portal/ack.html?ack=DPP-2026-1",
               "web/search.html?q=kalpana+chawla", "web/article.html", "web/shop.html", "web/cart.html",
-              "web/checkout.html", "web/order.html?order=AS-1&total=10", "web/inbox.html", "web/message.html?id=4"]
+              "web/checkout.html", "web/order.html?order=AS-1&total=10", "web/inbox.html", "web/message.html?id=4", "web/login.html", "web/otp.html"]
 FIELD_KEYS = {"id", "label", "type", "required", "value", "error", "sensitive_hint"}
 
 
@@ -200,6 +200,15 @@ async def test_main_text_reads_mail_body(page, base):
     assert "Reply" not in text and "Delete" not in text
 
 
+async def test_main_text_reads_whole_page_when_landmark_is_a_sliver(page):
+    # BRW-06, seen on Bing headless: <main> held only a toolbar while the results sat outside it.
+    results = "".join(f"<p>Result {i}: Kalpana Chawla was born in Karnal, Haryana, India.</p>" for i in range(12))
+    await page.set_content(f"<main><p>Skip to content. Accessibility feedback. Rewards and settings.</p>"
+                           f"<p>Images. Videos. Maps. News. More.</p></main><div id=results>{results}</div>")
+    text = await main_text(page)
+    assert "Result 0: Kalpana Chawla was born in Karnal" in text and "Result 11" in text
+
+
 async def test_main_text_on_form_page_is_not_empty(page, base):
     await page.goto(f"{base}/portal/apply.html")
     assert "Personal Details" in await main_text(page)
@@ -212,7 +221,7 @@ async def test_main_text_on_form_page_is_not_empty(page, base):
     ("Send", "submit", None, (True, "send")),
     ("Delete", "button", None, (True, "delete")),
     ("I agree", "button", None, (True, "accept")),
-    ("Search", "submit", "get", (False, "other")),
+    ("Search", "submit", None, (False, "other")),
     ("Save", "submit", "post", (True, "submit")),
     ("Add to cart", "button", None, (False, "other")),
     ("Reply", "button", None, (False, "other")),

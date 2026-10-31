@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Disability Pension - Apply</title>
+<style>
+  body { font: 1rem system-ui, sans-serif; margin: 2rem; max-width: 44rem; line-height: 1.5; }
+  fieldset { margin: 1rem 0; padding: 1rem; }
+  label { display: block; margin-top: .8rem; font-weight: 600; }
+  input[type="text"], input[type="date"] { font: inherit; padding: .4rem; width: 100%; max-width: 26rem; }
+  .hint { color: #444; font-size: .9rem; }
+  #robot-check { margin: 1.2rem 0; padding: .8rem; border: 1px solid #999; max-width: 26rem; }
+  #status { margin-top: 1rem; font-weight: 700; min-height: 1.5rem; }
+  button { font: inherit; padding: .6rem 1rem; }
+</style>
+</head>
+<body>
+<h1>Apply for Disability Pension</h1>
+<p>Demo portal. Values are fictional.</p>
+
+<form id="apply-form" novalidate>
+  <fieldset>
+    <legend>Personal Details</legend>
+
+    <label for="full_name">Full name</label>
+    <input id="full_name" name="full_name" type="text" autocomplete="name" required>
+
+    <label for="dob">Date of birth</label>
+    <input id="dob" name="dob" type="date" required>
+
+    <label for="pin_code">PIN code</label>
+    <input id="pin_code" name="pin_code" type="text" inputmode="numeric" maxlength="6"
+           autocomplete="postal-code" aria-describedby="pin-help" required>
+    <p id="pin-help" class="hint">Six digit postal PIN code.</p>
+
+    <label for="aadhaar">Aadhaar number</label>
+    <input id="aadhaar" name="aadhaar" type="text" inputmode="numeric" maxlength="12"
+           autocomplete="off" required>
+  </fieldset>
+
+  <div id="robot-check" class="g-recaptcha" data-human-check="captcha" data-sitekey="demo">
+    <label><input id="robot" name="robot" type="checkbox"> I'm not a robot</label>
+    <p class="hint">Demo human check. A person completes this step.</p>
+  </div>
+
+  <button id="submit" type="submit">Submit application</button>
+</form>
+
+<div id="status" role="status" aria-live="polite"></div>
+
+<script>
+  (function () {
+    const pin = document.getElementById("pin_code");
+    let pinTrapArmed = true;
+
+    // Planted trap: the first six digit value silently loses its last digit.
+    // The verifier must catch the truncated value; a second entry is accepted.
+    pin.addEventListener("input", function () {
+      if (pinTrapArmed && pin.value.length >= 6) {
+        pin.value = pin.value.slice(0, -1);
+        pin.dataset.truncated = "true";
+        pinTrapArmed = false;
+      }
+    });
+
+    const robot = document.getElementById("robot");
+    const status = document.getElementById("status");
+    const form = document.getElementById("apply-form");
+
+    async function pollHuman() {
+      try {
+        const response = await fetch("__human_state", { cache: "no-store" });
+        const data = await response.json();
+        if (data.done) {
+          robot.checked = true;
+          const wrapper = document.getElementById("robot-check");
+          if (wrapper) wrapper.remove();
+          document.body.dataset.humanCheck = "done";
+        }
+      } catch (err) {
+        // about:blank in page.set_content tests has no server to ask.
+      }
+    }
+    pollHuman();
+    setInterval(pollHuman, 500);
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      fetch("__portal_attempt", { method: "POST" }).catch(function () {
+        // No fixture server in page.set_content tests.
+      });
+      if (!robot.checked) {
+        status.textContent = "Please complete the I'm not a robot check.";
+        return;
+      }
+      status.textContent = "ACK-2026-0042";
+      document.body.dataset.submitted = "true";
+      fetch("__portal_submit", { method: "POST" }).catch(function () {
+        // The acknowledgment still appears when the fixture server is absent.
+      });
+    });
+  }());
+</script>
+</body>
+</html>

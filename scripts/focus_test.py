@@ -8,7 +8,7 @@ Two checks per click:
   OS focus:   (Windows only) the foreground OS window is the Console window. This is the one
               Handy cares about, because Handy pastes into the OS-focused window.
 
-Run from the repo root:  python scripts/focus_test.py [--console-url URL]
+Run from the repo root:  python scripts/focus_test.py [--console-url URL] [--mode chromium|chrome|attach]
 If the backend is not running, a stand-in Console page with one text box is used.
 """
 import argparse
@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.browser import CONSOLE_URL, BrowserController  # noqa: E402
+from app.browser import CONSOLE_URL, MODES, BrowserController  # noqa: E402
 
 STAND_IN_CONSOLE = ("<!doctype html><title>Voice Console (stand-in)</title>"
                     "<h1>Voice Console (stand-in)</h1><textarea id=box rows=4 cols=40 autofocus></textarea>")
@@ -61,7 +61,7 @@ def os_foreground_title() -> str | None:
     return buf.value
 
 
-async def main(console_url: str) -> int:
+async def main(console_url: str, mode: str | None) -> int:
     site = serve_mock_site()
     if reachable(console_url):
         print(f"Console: {console_url}")
@@ -69,7 +69,8 @@ async def main(console_url: str) -> int:
         print(f"Console: {console_url} not reachable, using the stand-in Console page")
         console_url = "data:text/html," + STAND_IN_CONSOLE
 
-    browser = BrowserController(console_url=console_url)
+    browser = BrowserController(console_url=console_url, mode=mode)
+    print(f"Browser mode: {browser.mode}")
     await browser.start()
     try:
         await browser.goto(f"{site}/portal/apply.html")
@@ -101,4 +102,6 @@ async def main(console_url: str) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--console-url", default=CONSOLE_URL)
-    sys.exit(asyncio.run(main(parser.parse_args().console_url)))
+    parser.add_argument("--mode", choices=MODES, default=None, help="browser mode (default: BROWSER_MODE)")
+    args = parser.parse_args()
+    sys.exit(asyncio.run(main(args.console_url, args.mode)))
