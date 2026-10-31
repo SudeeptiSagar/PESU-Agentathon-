@@ -284,7 +284,7 @@ Keep answers under 30 seconds. Do not invent numbers.
 
 Read this before Q&A 2, and say it before the first task if the gate is not `rules`.
 
-**Default: nothing leaves the machine.** The demo runs `GATE_BACKEND=rules`, where the gate is local code: no key, no account, no outbound evaluator call. Speech recognition, speech output and the model run on the demo machine. The profile is encrypted at rest, and the model sees placeholders, not values. The only traffic off the machine is what the browser loads: the search engine, Wikipedia, and the localhost mock sites.
+**Default: nothing leaves the machine.** The demo runs `GATE_BACKEND=rules`, where the gate is local code: no key, no account, no outbound evaluator call. Speech recognition, speech output and the model run on the demo machine. The profile is encrypted at rest, and the model sees placeholders, not values. The only traffic off the machine is what the browser loads: the search engine, Wikipedia, and the localhost mock sites. This assumes `OLLAMA_URL` points at a local model. If it points at a remote Ollama host, say so; the "local model" claim only holds for a local endpoint.
 
 **Opt-in: `jev`.** `GATE_BACKEND=jev` adds one HTTPS call per risky action to `https://opencode.ai/zen/v1/systemone`, a hosted service (OpenCode Zen, serving TypeSafe System One). That call is live-tested and can be enabled with a valid key, but only with disclosure, because of what it carries:
 

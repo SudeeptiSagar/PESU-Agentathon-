@@ -823,7 +823,7 @@ class AppServer:
 async def app_server() -> AsyncIterator[AppServer]:
     """Start uvicorn in this process on a free port, wait for /health, stop cleanly."""
     with deterministic_config():
-        from app.main import app as fastapi_app
+        from app.main import app as fastapi_app, make_browser
 
         # app.main keeps one Hub on the FastAPI app for the process lifetime. A new
         # server must start from a fresh Context, otherwise a CLI run of A then C sees
@@ -831,12 +831,24 @@ async def app_server() -> AsyncIterator[AppServer]:
         fastapi_app.state.hub = None
 
         port = free_port()
+        base_url = f"http://127.0.0.1:{port}"
+        previous_factory = getattr(fastapi_app.state, "browser_factory", None)
+
+        def browser_factory(hub):
+            browser = make_browser(hub)
+            # These headless tests drive the Console over their own WebSocket client.
+            # The visual Console window is not needed, and its origin is not the fixed
+            # 8080 origin the real page expects, so do not open it.
+            browser.console_url = "about:blank"
+            return browser
+
+        fastapi_app.state.browser_factory = browser_factory
+
         config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="warning",
                                 lifespan="on")
         server = uvicorn.Server(config)
         server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
         task = asyncio.create_task(server.serve(), name="e2e-uvicorn")
-        base_url = f"http://127.0.0.1:{port}"
         loop = asyncio.get_running_loop()
         deadline = loop.time() + 20
         last_error: Exception | None = None
@@ -859,6 +871,7 @@ async def app_server() -> AsyncIterator[AppServer]:
                     await asyncio.sleep(0.05)
             yield AppServer(base_url=base_url, ws_url=f"ws://127.0.0.1:{port}/ws/console")
         finally:
+            fastapi_app.state.browser_factory = previous_factory
             server.should_exit = True
             try:
                 await asyncio.wait_for(task, timeout=10)
