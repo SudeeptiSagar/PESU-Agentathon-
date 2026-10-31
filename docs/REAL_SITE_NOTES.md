@@ -32,6 +32,32 @@ Notes:
 - Nothing hides the automation: no `--disable-blink-features=AutomationControlled`, no fake user
   agent, no `navigator.webdriver` changes.
 
+## BRW-07 step 2: chrome mode (31 Oct 2026, 23:00 IST)
+
+- `scripts/focus_test.py --mode chrome` with Chrome 156: **5/5**, against both the stand-in and the
+  real backend Console. The Console is its own window of the same Chrome; the Windows foreground
+  helper brings it forward.
+- `close()` on a Chrome the agent started shuts it down via CDP `Browser.close` (cookies are
+  saved) and keeps the profile folder; on a Chrome it attached to, only its own windows close.
+
+## BRW-07 step 3: Task D on the real Gmail (31 Oct 2026, 23:20 IST)
+
+Checked in the signed-in agent profile with the agent's own functions (`goto`, `snapshot`,
+`locate(...).click()`, `main_text`), printing structure and yes/no checks only, never email text.
+
+| Finding | What was done |
+|---|---|
+| Signed in, Gmail opens the inbox; `humancheck` stays silent on the inbox and on a message | nothing needed |
+| Inbox rows have no `<a href>`: each row's clickable part is a `div[role=link]` | `snapshot` collects `[role=link]` as links |
+| 50 row checkboxes are ARIA `role=checkbox` divs and filled the 60-element cap before any link | ARIA toggles now come after links; their state is read from `aria-checked` |
+| 50 per-row "Not starred" buttons then filled the cap | a button text repeated on many rows is listed twice at most |
+| Gmail renders after "load" | on `mail.google.com`, `snapshot` and `main_text` wait up to 10 s for inbox rows or a message |
+| The generic reader started from `[role=main]` and hit the 4000-character cap before the body | a Gmail reader returns the subject, then each message newest first (From, Date, body) |
+| On an open message, Delete and Unsubscribe are flagged irreversible (`delete`) | nothing needed |
+
+Result: open inbox (15 row links in the snapshot, newest first), click the newest row, `main_text`
+starts with the subject, has the sender and the full body, and no Gmail UI words.
+
 ## Search and site reachability (BRW-05, 31 Oct 2026, 21:55 IST)
 
 Checked from this network with Playwright's Chromium.
