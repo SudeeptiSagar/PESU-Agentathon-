@@ -99,6 +99,12 @@ PIPER_VOICE = _env("PIPER_VOICE", "")
 BROWSER_MODE = _choice("BROWSER_MODE", "chromium", ("chromium", "chrome", "attach"))
 # True runs Playwright's Chromium without windows (tests, servers). The demo uses visible windows.
 BROWSER_HEADLESS = _bool("BROWSER_HEADLESS", False)
+# False skips the PIN unlock / onboarding that normally starts when the Console first connects (tests, diagnostics).
+AUTO_UNLOCK = _bool("AUTO_UNLOCK", True)
+# Where the Voice Console lives. "browser": a window of the agent browser (the default). "overlay": the native floating
+# orb (python -m app.overlay), found by its window title, so the agent browser opens no Console window of its own.
+CONSOLE_MODE = _choice("CONSOLE_MODE", "browser", ("browser", "overlay"))
+OVERLAY_TITLE = _env("OVERLAY_TITLE", "PESU Assistant")
 CHROME_PATH = _env("CHROME_PATH", "")  # empty = auto-detect the installed Chrome
 CHROME_DEBUG_PORT = _int("CHROME_DEBUG_PORT", 9222, minimum=1024)
 if CHROME_DEBUG_PORT > 65535:

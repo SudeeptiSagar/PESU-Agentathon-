@@ -1,10 +1,7 @@
 """Production Console accessibility regressions served by FastAPI."""
 from __future__ import annotations
 
-import os
-import shutil
 import socket
-import subprocess
 import threading
 import time
 import urllib.request
@@ -23,38 +20,12 @@ RESPONSE = "This response is announced once."
 
 
 @pytest.fixture(scope="module")
-def production_pages(tmp_path_factory):
-    """Build both production speech modes and keep copies outside the repo."""
-    npm = shutil.which("npm.cmd") or shutil.which("npm")
-    if not npm:
-        pytest.skip("npm is required to build the production Console")
-
-    output = tmp_path_factory.mktemp("production-console")
-    original_page = (CLIENT / "console.html").read_bytes() if (CLIENT / "console.html").exists() else None
-    original_dist = (main.DIST_DIR / "console.html").read_bytes() if (main.DIST_DIR / "console.html").exists() else None
-    try:
-        pages = {}
-        for mode in ("browser", "piper"):
-            env = os.environ.copy()
-            env["VITE_TTS_BACKEND"] = mode
-            result = subprocess.run(
-                [npm, "run", "build"],
-                cwd=CLIENT,
-                env=env,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            assert result.returncode == 0, f"npm run build ({mode}) failed:\n{result.stdout}\n{result.stderr}"
-            page = output / f"console-{mode}.html"
-            page.write_bytes((CLIENT / "console.html").read_bytes())
-            pages[mode] = page
-        return pages
-    finally:
-        if original_page is not None:
-            (CLIENT / "console.html").write_bytes(original_page)
-        if original_dist is not None:
-            (main.DIST_DIR / "console.html").write_bytes(original_dist)
+def production_pages():
+    """The committed, already-built Console. Read-only: this test never runs npm and never writes into client/."""
+    page = CLIENT / "console.html"
+    if not page.exists():
+        pytest.skip("client/console.html is not built")
+    return {"browser": page}
 
 
 @pytest.fixture(scope="module")
@@ -65,11 +36,9 @@ def chromium() -> Browser:
         browser.close()
 
 
-@pytest.fixture(scope="module", params=("browser", "piper"))
+@pytest.fixture(scope="module", params=("browser",))
 def live_console(request, production_pages):
     """Serve the built page from the actual FastAPI /console and /ws/console routes."""
-    dist_html = main.DIST_DIR / "console.html"
-    old_html = dist_html.read_bytes() if dist_html.exists() else None
     old_tts_backend = main.config.TTS_BACKEND
     old_port = main.config.PORT
     old_handle = main.agent.handle_utterance
@@ -95,8 +64,6 @@ def live_console(request, production_pages):
         stops.append(True)
         await ctx.say("Stopped.")
 
-    dist_html.parent.mkdir(parents=True, exist_ok=True)
-    dist_html.write_bytes(page.read_bytes())
     main.config.TTS_BACKEND = "browser"
     main.agent.handle_utterance = handle_utterance
     main.agent.stop = stop
@@ -129,10 +96,6 @@ def live_console(request, production_pages):
 
     server.should_exit = True
     thread.join(timeout=5)
-    if old_html is not None:
-        dist_html.write_bytes(old_html)
-    elif dist_html.exists():
-        dist_html.unlink()
     main.config.TTS_BACKEND = old_tts_backend
     main.config.PORT = old_port
     main.agent.handle_utterance = old_handle

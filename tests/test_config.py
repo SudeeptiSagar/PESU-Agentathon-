@@ -9,7 +9,7 @@ from app import config
 ENV_VARS = ["HOST", "PORT", "OLLAMA_URL", "LLM_MODEL", "NUM_CTX", "SEARCH_URL", "MAX_STEPS",
             "MAX_FAILURES", "BLOCKED_DOMAINS", "GATE_BACKEND", "GATE_PROCEED", "GATE_ASK",
             "JEV_API_KEY", "STT_BACKEND", "TTS_BACKEND", "PIPER_VOICE", "PROFILE_PATH",
-            "BROWSER_MODE", "BROWSER_HEADLESS", "CHROME_PATH", "CHROME_DEBUG_PORT", "AGENT_PROFILE_DIR"]
+            "BROWSER_MODE", "BROWSER_HEADLESS", "AUTO_UNLOCK", "CHROME_PATH", "CHROME_DEBUG_PORT", "AGENT_PROFILE_DIR"]
 
 
 @pytest.fixture
@@ -65,6 +65,11 @@ def test_browser_overrides(load, tmp_path):
                                           ("false", False), ("0", False), ("no", False), ("off", False)])
 def test_browser_headless_flag(load, raw, expected):
     assert load(BROWSER_HEADLESS=raw).BROWSER_HEADLESS is expected
+
+
+def test_auto_unlock_defaults_on_and_can_be_switched_off(load):
+    assert load().AUTO_UNLOCK is True
+    assert load(AUTO_UNLOCK="false").AUTO_UNLOCK is False
 
 
 def test_browser_headless_defaults_to_visible_windows(load):

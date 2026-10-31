@@ -798,3 +798,52 @@ async def test_a_held_action_without_a_total_has_no_total_key(setup, monkeypatch
     monkeypatch.setattr(perception, "main_text", main_text)
     await ex.run(act("click", element_id="b1"), session, browser)
     assert "total_text" not in session.pending_action
+
+
+# ================================================================ dropdowns match the page's own options, ignoring case
+async def test_a_dropdown_option_matches_whatever_the_case_the_page_uses(setup, monkeypatch):
+    ex, session, browser, page = setup(PORTAL_URL)
+
+    async def evaluate(self, js):
+        return [{"text": "Select gender", "value": ""}, {"text": "Female", "value": "Female"},
+                {"text": "Male", "value": "Male"}, {"text": "Transgender", "value": "Transgender"}]
+    monkeypatch.setattr(FakeLocator, "evaluate", evaluate)
+    approve_domain(session, "localhost")
+    assert (await ex.run(act("select_option", field_id="f3", option="male"), session, browser)).startswith("ok:")
+    assert ("select", '[data-agent-id="f3"]', {"label": "Male", "timeout": 5000}) in page.calls
+    assert session.expected["f3"]["value"] == "male"                 # what we asked for; the verifier compares ignoring case
+
+
+async def test_a_dropdown_with_no_visible_text_is_chosen_by_value(setup, monkeypatch):
+    ex, session, browser, page = setup(PORTAL_URL)
+
+    async def evaluate(self, js):
+        return [{"text": "", "value": "GEN"}, {"text": "", "value": "OBC"}]
+    monkeypatch.setattr(FakeLocator, "evaluate", evaluate)
+    assert (await ex.run(act("select_option", field_id="f3", option="obc"), session, browser)).startswith("ok:")
+    assert ("select", '[data-agent-id="f3"]', {"value": "OBC", "timeout": 5000}) in page.calls
+
+
+async def test_an_option_the_page_does_not_offer_still_falls_back_to_the_old_exact_match(setup, monkeypatch):
+    ex, session, browser, page = setup(PORTAL_URL)
+
+    async def evaluate(self, js):
+        return [{"text": "Female", "value": "Female"}]
+    monkeypatch.setattr(FakeLocator, "evaluate", evaluate)
+    assert (await ex.run(act("select_option", field_id="f3", option="martian"), session, browser)).startswith("ok:")
+    assert ("select", '[data-agent-id="f3"]', {"label": "martian", "timeout": 5000}) in page.calls    # the real select raises
+
+
+async def test_real_portal_gender_male_selects_the_option_Male(base, real):
+    browser, page = real
+    await page.goto(f"{base}/portal/apply.html")
+    session, ex = Session(profile=copy.deepcopy(DEMO_PROFILE)), ToolExecutor()
+    approve_domain(session, "127.0.0.1")
+    snap = await tools.take_snapshot(page, session)
+    gender = field_id(snap, "Gender")
+    result = await ex.run(act("select_option", field_id=gender, option="{gender}"), session, browser)    # profile says "male"
+    assert result.startswith("ok:"), result
+    assert await page.eval_on_selector("#gender", "e => e.selectedOptions[0].text") == "Male"
+    category = field_id(snap, "Category")
+    assert (await ex.run(act("select_option", field_id=category, option="{category}"), session, browser)).startswith("ok:")
+    assert await page.eval_on_selector("#category", "e => e.selectedOptions[0].text") == "General"

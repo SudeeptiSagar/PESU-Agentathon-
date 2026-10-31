@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import CrystalizedBall from "./src/components/CrystalizedBall.jsx";
 import "./console.css";
@@ -13,6 +13,56 @@ if (!Array.prototype.at) {
   };
 }
 
+// The orb is decoration. It draws with WebGL, which some laptops and embedded browsers do not have. If it cannot be
+// drawn, show a plain glowing circle instead: the input box, speech, keys and activity panel must never depend on it.
+// Software WebGL (SwiftShader, llvmpipe, "Basic Render Driver") runs 16,000 particles far too slowly: the page freezes and
+// the input box with it. Treat it like no WebGL.
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|software|basic render|microsoft basic/i;
+
+function webglAvailable() {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (!gl) return false;
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+    return !SOFTWARE_RENDERER.test(renderer);
+  } catch {
+    return false;
+  }
+}
+
+// /console?orb=off always shows the plain circle; ?orb=on forces the WebGL orb; the default decides by itself.
+function orbWanted() {
+  const choice = new URLSearchParams(window.location.search).get("orb");
+  if (choice === "off") return false;
+  if (choice === "on") return true;
+  return webglAvailable();
+}
+
+class OrbBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn("Orb disabled, using the plain circle:", error?.message || error);
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+function PlainOrb({ color }) {
+  return <span className="plain-orb" style={{ "--plain-orb": color }} aria-hidden="true" />;
+}
+
 const isOverlay =
   typeof window !== "undefined" &&
   (new URLSearchParams(window.location.search).get("overlay") === "1" ||
@@ -22,6 +72,24 @@ const isOverlay =
 const REDACTED_INPUT = "Sensitive entry sent";
 const BROWSER_TTS_ENABLED =
   String(import.meta.env.VITE_TTS_BACKEND || "browser").toLowerCase() === "browser";
+
+// Speech. A normal browser speaks with speechSynthesis. The desktop overlay's embedded browser has none, so the Console
+// passes each line to the overlay through console.info; app/overlay.py reads those two messages and speaks with the
+// Windows voices. Either way every line is queued (never cut off by the next) and cancel stops everything at once.
+const NATIVE_SPEECH =
+  typeof window !== "undefined" &&
+  "speechSynthesis" in window &&
+  typeof SpeechSynthesisUtterance === "function";
+
+function speakText(text) {
+  if (NATIVE_SPEECH) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+  else console.info("PESU_SPEAK:" + JSON.stringify(String(text)));
+}
+
+function cancelSpeech() {
+  if (NATIVE_SPEECH) window.speechSynthesis.cancel();
+  else console.info("PESU_CANCEL_SPEECH");
+}
 const COLORS = {
   ready: { preset: "frost", color: "#38bdf8" },       // Blue while idle
   listening: { preset: "ember", color: "#f97316" },   // Orange while listening
@@ -240,10 +308,9 @@ function AssistantOrb() {
   }, []);
 
   const suppressInitialFocusReveal = useRef(true);
-  const browserTtsAvailable =
-    BROWSER_TTS_ENABLED &&
-    "speechSynthesis" in window &&
-    typeof SpeechSynthesisUtterance === "function";
+  // True when this Console speaks the agent's lines itself (natively or through the overlay), so a screen reader
+  // must not read the same lines a second time.
+  const browserTtsAvailable = BROWSER_TTS_ENABLED;
 
   const handleEvent = useCallback((event) => {
     switch (event.type) {
@@ -252,7 +319,7 @@ function AssistantOrb() {
         setStatus(next);
         setAnnouncement(next.label);
         if (String(event.name).toUpperCase() === "IDLE" && BROWSER_TTS_ENABLED) {
-          window.speechSynthesis?.cancel();
+          cancelSpeech();
         }
         if (["IDLE", "DONE"].includes(String(event.name).toUpperCase()))
           setPending(null);
@@ -265,7 +332,7 @@ function AssistantOrb() {
           const messageId = messageSequenceRef.current++;
           setStatus({ phase: "answering", label: "Answering" });
           if (browserTtsAvailable) {
-            window.speechSynthesis.speak(new SpeechSynthesisUtterance(event.text));
+            speakText(event.text);
           }
           setAnnouncement("Answering");
           setAgentMessages((current) => [...current, { id: messageId, text: event.text }].slice(-6));
@@ -309,11 +376,12 @@ function AssistantOrb() {
   }, [browserTtsAvailable]);
 
   const { connection, send } = useConsoleSocket(handleEvent);
+  const canDrawOrb = useMemo(orbWanted, []);
 
   const sendDraft = useCallback(() => {
     const text = draft.trim();
     if (!text) return;
-    if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
+    if (BROWSER_TTS_ENABLED) cancelSpeech();
     if (!send({ type: "utterance", text })) {
       setAnnouncement("Reconnecting. Your request is still here.");
       return;
@@ -334,7 +402,7 @@ function AssistantOrb() {
   }, [draft, connection, inputMode, sendDraft]);
 
   const sendKey = useCallback((name) => {
-    if (name === "Escape") window.speechSynthesis?.cancel();
+    if (name === "Escape") cancelSpeech();
     if (!send({ type: "key", name })) {
       setAnnouncement("Console reconnecting. The command was not sent.");
       return;
@@ -444,17 +512,23 @@ function AssistantOrb() {
         }}
       >
         <span className="orb-aura" aria-hidden="true" />
-        <CrystalizedBall
-          className="assistant-ball"
-          preset={orb.preset}
-          color={orb.color}
-          size={isOverlay ? 0.72 : 0.78}
-          particleCount={16000}
-          speed={phase === "thinking" ? 1.15 : phase === "acting" ? 1.35 : 0.72}
-          interactive={false}
-          intro={false}
-          paused={phase === "paused"}
-        />
+        {canDrawOrb ? (
+          <OrbBoundary fallback={<PlainOrb color={orb.color} />}>
+            <CrystalizedBall
+              className="assistant-ball"
+              preset={orb.preset}
+              color={orb.color}
+              size={isOverlay ? 0.72 : 0.78}
+              particleCount={16000}
+              speed={phase === "thinking" ? 1.15 : phase === "acting" ? 1.35 : 0.72}
+              interactive={false}
+              intro={false}
+              paused={phase === "paused"}
+            />
+          </OrbBoundary>
+        ) : (
+          <PlainOrb color={orb.color} />
+        )}
       </button>
 
       <div className="orb-subtitle" aria-hidden="true">

@@ -67,5 +67,6 @@ def test_ws_echo_and_stop():
         assert ws.receive_json() == {"type": "speak",
                                      "text": "The browser is not ready, so I can't do that yet."}
         ws.send_json({"type": "key", "name": "Escape"})
+        assert ws.receive_json() == {"type": "input_mode", "mode": "voice"}      # stop never leaves hidden-entry mode on
         assert ws.receive_json() == {"type": "state", "name": "IDLE"}
         assert ws.receive_json() == {"type": "speak", "text": "Stopped."}

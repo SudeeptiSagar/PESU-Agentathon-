@@ -343,6 +343,11 @@ STABLE_SELECTOR_JS = r"""e => {
 }"""
 
 ACTION_TIMEOUT_MS = 5000
+OPTIONS_JS = "e => Array.from(e.options || []).map(o => ({text: (o.text || '').trim(), value: o.value}))"
+
+
+def _norm_option(text: object) -> str:
+    return re.sub(r"\s+", " ", str(text)).strip().casefold()
 # An amount the page shows next to the word "total": a currency mark before the number or a currency word after it.
 # "Total items: 3" and "Subtotal 100" do not match, so the read-back never reads a count out as money.
 TOTAL_RE = re.compile(
@@ -645,10 +650,22 @@ class ToolExecutor:
             if domain:
                 return f"needs_approval: {domain}"
         locator = perception.locate(page, session, field_id)
+        # Match the dropdown's own options ignoring case and spacing: the profile says "male", the page says "Male".
         try:
-            await locator.select_option(label=option, timeout=ACTION_TIMEOUT_MS)
+            offered = await locator.evaluate(OPTIONS_JS)
         except Exception:
-            await locator.select_option(value=option, timeout=ACTION_TIMEOUT_MS)
+            offered = None
+        wanted = _norm_option(option)
+        match = next((o for o in offered if wanted in (_norm_option(o["text"]), _norm_option(o["value"]))
+                      and (o["text"] or o["value"])), None) if isinstance(offered, list) else None
+        if match is not None:
+            await locator.select_option(label=match["text"], timeout=ACTION_TIMEOUT_MS) if match["text"] else \
+                await locator.select_option(value=match["value"], timeout=ACTION_TIMEOUT_MS)
+        else:
+            try:
+                await locator.select_option(label=option, timeout=ACTION_TIMEOUT_MS)
+            except Exception:
+                await locator.select_option(value=option, timeout=ACTION_TIMEOUT_MS)
         await self._record_expected(session, page, field_id, el, option, source, "select")
         return f"ok: chose an option in '{_clean(el['label'])}'"
 

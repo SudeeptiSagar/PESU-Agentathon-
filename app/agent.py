@@ -278,6 +278,7 @@ async def stop(ctx: Context) -> None:
     _audit("stop")
     if ctx.tts is not None:
         ctx.tts.interrupt()
+    await ctx.emit("input_mode", mode="voice")      # never leave the Console stuck in hidden-entry mode
     await ctx.emit("state", name="IDLE")
     await ctx.say("Stopped.")
 
