@@ -14,7 +14,10 @@ VALID = {
     "full_name": "Asha Kumari",
     "dob": "1980-03-04",
     "phone": "9876543210",
-    "address": "12 MG Road, Bengaluru",
+    "email": "asha@example.com",
+    "address": "12 MG Road",
+    "city": "Bengaluru",
+    "state": "Karnataka",
     "pin_code": "560001",
     "aadhaar": "123412341234",
     "annual_income": "120000",
@@ -49,8 +52,10 @@ def page(browser):
 
 
 def fill_personal(page, pin_attempts=2):
-    for key in ("full_name", "dob", "phone", "address", "aadhaar", "annual_income", "disability_percent"):
+    for key in ("full_name", "dob", "phone", "email", "address", "city", "state", "aadhaar",
+                "annual_income", "disability_percent"):
         page.fill(f"#{key}", VALID[key])
+    page.select_option("#gender", "Female")
     page.select_option("#category", "OBC")
     for _ in range(pin_attempts):
         page.fill("#pin_code", VALID["pin_code"])
@@ -65,6 +70,20 @@ def test_landing_has_apply_and_help_in_new_tab(page, base_url):
     help_page = new_tab.value
     help_page.wait_for_load_state()
     assert help_page.title() == "Help: Disability Pension Application"
+
+
+PROFILE_FIELDS = ["full_name", "dob", "gender", "address", "city", "state", "pin_code", "phone", "email",
+                  "annual_income", "category", "disability_percent", "aadhaar", "bank_account", "ifsc"]
+
+
+def test_every_profile_field_has_a_labelled_control(page, base_url):
+    """PRD Section 11 lists the profile fields; the form must have a labelled input for each."""
+    page.goto(f"{base_url}/apply.html")
+    for key in PROFILE_FIELDS:
+        assert page.locator(f"label[for='{key}']").count() == 1, key
+        assert page.locator(f"#{key}").count() == 1, key
+    required_optional = {k: page.get_attribute(f"#{k}", "required") is not None for k in PROFILE_FIELDS}
+    assert [k for k, req in required_optional.items() if not req] == ["email"]
 
 
 def test_pin_code_trap_drops_last_digit_once(page, base_url):

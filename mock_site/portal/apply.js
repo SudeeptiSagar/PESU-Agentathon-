@@ -61,8 +61,15 @@
       if (!v) return "Enter your date of birth.";
       return new Date(v) < new Date() ? "" : "Date of birth must be in the past.";
     }],
+    ["gender", "personal", function () { return value("gender") ? "" : "Select your gender."; }],
     ["phone", "personal", function () { return /^[6-9]\d{9}$/.test(value("phone")) ? "" : "Enter a 10-digit mobile number."; }],
+    ["email", "personal", function () {
+      var v = value("email");
+      return !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? "" : "Enter a valid email address, or leave it blank.";
+    }],
     ["address", "personal", function () { return value("address").length >= 5 ? "" : "Enter your address."; }],
+    ["city", "personal", function () { return value("city").length >= 2 ? "" : "Enter your city."; }],
+    ["state", "personal", function () { return value("state").length >= 2 ? "" : "Enter your state."; }],
     ["pin_code", "personal", function () { return /^[1-9]\d{5}$/.test(value("pin_code")) ? "" : "Enter a 6-digit PIN code."; }],
     ["aadhaar", "personal", function () {
       return digits("aadhaar").length === 12 && /^[\d ]+$/.test(value("aadhaar")) ? "" : "Enter a 12-digit Aadhaar number.";

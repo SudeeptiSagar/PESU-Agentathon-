@@ -35,15 +35,40 @@
           <p class="error" id="dob-error"></p>
         </div>
         <div class="field">
+          <label for="gender">Gender</label>
+          <select id="gender" name="gender" required aria-describedby="gender-error">
+            <option value="">Select gender</option>
+            <option value="Female">Female</option>
+            <option value="Male">Male</option>
+            <option value="Transgender">Transgender</option>
+          </select>
+          <p class="error" id="gender-error"></p>
+        </div>
+        <div class="field">
           <label for="phone">Mobile number</label>
           <input id="phone" name="phone" type="tel" inputmode="numeric" maxlength="10" required aria-describedby="phone-hint phone-error">
           <p class="hint" id="phone-hint">10 digits, without +91</p>
           <p class="error" id="phone-error"></p>
         </div>
         <div class="field">
+          <label for="email">Email address (optional)</label>
+          <input id="email" name="email" type="email" autocomplete="email" aria-describedby="email-error">
+          <p class="error" id="email-error"></p>
+        </div>
+        <div class="field">
           <label for="address">Address</label>
           <textarea id="address" name="address" rows="3" required aria-describedby="address-error"></textarea>
           <p class="error" id="address-error"></p>
+        </div>
+        <div class="field">
+          <label for="city">City</label>
+          <input id="city" name="city" type="text" autocomplete="address-level2" required aria-describedby="city-error">
+          <p class="error" id="city-error"></p>
+        </div>
+        <div class="field">
+          <label for="state">State</label>
+          <input id="state" name="state" type="text" autocomplete="address-level1" required aria-describedby="state-error">
+          <p class="error" id="state-error"></p>
         </div>
         <div class="field">
           <label for="pin_code">PIN code</label>
