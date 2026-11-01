@@ -355,8 +355,8 @@ const buildDust = count => {
 };
 
 const passVertex = `#version 300 es
-in vec2 position;
-in vec2 uv;
+layout(location = 0) in vec2 position;
+layout(location = 1) in vec2 uv;
 out vec2 vUv;
 void main() {
   vUv = uv;
@@ -607,7 +607,7 @@ void main() {
 const dustVertex = `#version 300 es
 precision highp float;
 
-in float aIndex;
+layout(location = 0) in float aIndex;
 
 uniform sampler2D tHome;
 uniform sampler2D tSeed;

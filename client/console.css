@@ -34,7 +34,7 @@ input {
 }
 
 .orb-screen {
-  --orb-tint: rgba(56, 189, 248, 0.22); /* Blue ready */
+  --orb-tint: rgba(56, 189, 248, 0.22); /* Blue idle */
   position: relative;
   display: grid;
   width: 100vw;
@@ -52,6 +52,14 @@ input {
 
 .orb-screen--thinking {
   --orb-tint: rgba(34, 197, 94, 0.25); /* Green thinking */
+}
+
+.orb-screen--acting {
+  --orb-tint: rgba(56, 189, 248, 0.22);
+}
+
+.orb-screen--stopped {
+  --orb-tint: rgba(148, 163, 184, 0.16);
 }
 
 .orb-screen--listening {
@@ -130,6 +138,36 @@ input {
   white-space: nowrap;
 }
 
+.capture-input--visible {
+  top: auto;
+  right: 16px;
+  bottom: clamp(24px, 6vh, 56px);
+  left: 50%;
+  width: min(760px, calc(100vw - 32px));
+  height: auto;
+  min-height: 64px;
+  padding: 14px 20px;
+  overflow: hidden;
+  transform: translateX(-50%);
+  border: 1px solid rgba(207, 226, 240, 0.48);
+  border-radius: 18px;
+  outline: none;
+  background: #101722;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.58);
+  color: #f5f9fc;
+  opacity: 1;
+  clip: auto;
+  clip-path: none;
+  font-size: 20px;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.capture-input--visible:focus-visible {
+  outline: 3px solid #effffb;
+  outline-offset: 3px;
+}
+
 .activity-panel {
   position: fixed;
   z-index: 5;
@@ -150,6 +188,11 @@ input {
   backdrop-filter: blur(24px);
 }
 
+.activity-panel:focus-visible {
+  outline: 3px solid #effffb;
+  outline-offset: 4px;
+}
+
 .activity-heading {
   display: flex;
   align-items: center;
@@ -157,7 +200,7 @@ input {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .connection-dot {
@@ -179,7 +222,7 @@ input {
 .activity-block h2 {
   margin: 0 0 8px;
   color: #cad5df;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -188,8 +231,8 @@ input {
 .activity-block p {
   margin: 0;
   color: #e7eef3;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.55;
 }
 
 .activity-pending {
@@ -202,6 +245,8 @@ input {
 .activity-alert {
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
+  font-size: 16px;
+  line-height: 1.55;
 }
 
 .activity-alert--error {
@@ -209,33 +254,43 @@ input {
 }
 
 .field-table {
+  width: 100%;
+  border-spacing: 0;
+  border-collapse: separate;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 9px;
+  text-align: left;
 }
 
-.field-row {
-  display: grid;
-  grid-template-columns: minmax(72px, 1fr) minmax(80px, 1fr) auto;
-  gap: 8px;
-  padding: 8px;
+.field-table th,
+.field-table td {
+  padding: 9px 7px;
+  border-bottom: 1px solid var(--line);
   color: #dbe5eb;
-  font-size: 11px;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
-.field-row + .field-row {
-  border-top: 1px solid var(--line);
+.field-table thead th {
+  color: #f3f7fa;
+  font-weight: 650;
 }
 
-.field-row > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.field-table tbody th {
+  font-weight: 600;
+}
+
+.field-table tr:last-child th,
+.field-table tr:last-child td {
+  border-bottom: 0;
 }
 
 .step-list,
 .transcript-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -244,15 +299,15 @@ input {
 .step-list li,
 .transcript-list li {
   display: grid;
-  gap: 3px;
-  color: #aebbc6;
-  font-size: 12px;
-  line-height: 1.45;
+  gap: 4px;
+  color: #d3dee7;
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 .step-list li span,
 .transcript-list li span {
-  color: #e3edf2;
+  color: #f3f7fa;
   font-weight: 600;
 }
 
@@ -316,4 +371,130 @@ input {
     background: Canvas;
     color: CanvasText;
   }
+
+  .capture-input--visible {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .capture-input--visible:focus-visible,
+  .activity-panel:focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
+
+/* Subtitle beneath floating crystalized ball */
+.orb-subtitle {
+  margin-top: 10px;
+  max-width: 260px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+  text-align: center;
+  line-height: 1.4;
+  word-break: break-word;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  z-index: 10;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+/* 100% Transparent Floating Overlay Mode */
+html.overlay-mode,
+body.overlay-mode,
+body.overlay-mode #root,
+body.overlay-mode .orb-screen,
+.orb-screen--overlay {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.overlay-mode {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body.overlay-mode .orb-screen {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  padding: 10px 4px !important;
+  overflow: visible !important;
+}
+
+body.overlay-mode .orb-button {
+  width: 200px !important;
+  height: 200px !important;
+  aspect-ratio: 1 !important;
+  flex-shrink: 0 !important;
+  animation: orb-float 6s ease-in-out infinite;
+}
+
+body.overlay-mode .orb-aura {
+  display: none !important;
+}
+
+body.overlay-mode .activity-panel {
+  display: none !important;
+}
+
+body.overlay-mode .capture-input,
+body.overlay-mode .capture-input--visible {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  opacity: 0.001 !important;
+  pointer-events: auto !important;
+  border: none !important;
+  background: transparent !important;
+  outline: none !important;
+  color: transparent !important;
+  box-shadow: none !important;
+  clip: auto !important;
+  clip-path: none !important;
+  cursor: default !important;
+  z-index: 5 !important;
+}
+
+/* Shown instead of the WebGL orb when the browser cannot draw it. Same size and state colour. */
+.plain-orb {
+  position: relative;
+  z-index: 1;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff55, var(--plain-orb) 55%, #0000 100%);
+  box-shadow: 0 0 60px 8px var(--plain-orb);
+  opacity: 0.9;
+  animation: plain-orb-pulse 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes plain-orb-pulse {
+  0%, 100% { transform: scale(0.96); }
+  50% { transform: scale(1.03); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plain-orb { animation: none; }
 }

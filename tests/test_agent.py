@@ -129,6 +129,11 @@ def call(name, **args):
     return {"name": name, "args": args}
 
 
+@pytest.fixture(autouse=True)
+def _no_goal_rewrite(monkeypatch):
+    monkeypatch.setattr(config, "UNDERSTAND_GOAL", False)       # the scripted models below expect one call per step
+
+
 @pytest.fixture
 def w(monkeypatch):
     return World(monkeypatch)
@@ -286,9 +291,10 @@ async def test_the_step_cap_asks_and_yes_carries_on_no_stops(w, monkeypatch):
 async def test_repeating_the_same_step_three_times_is_cut_off(w):
     w.llm_script = [call("scroll", direction="down")] * 3 + [call("finish", summary="ok")]
     w.executor.results = ["ok: scrolled down", "ok: scrolled down", "finish: ok"]
-    await w.hear("scroll")
-    assert len(w.executor.calls) == 3                                   # the third scroll never ran
-    assert any("repeated the same step" in line for line in w.session.history)
+    await w.hear("keep going through this page")
+    assert len(w.executor.calls) == 2                                   # the third scroll never ran
+    assert w.session.state == "DONE"                                    # ended cleanly, not "I am stuck"
+    assert not any("stuck" in line for line in w.say())
 
 
 # ---------------------------------------------------------------- asking the user
@@ -546,7 +552,7 @@ async def test_stop_halts_a_running_step_at_once(w):
     release = asyncio.Event()
     w.llm_script = [call("scroll", direction="down")] * 3
     w.executor.results = [release]
-    await agent.handle_utterance("keep scrolling", w.ctx)
+    await agent.handle_utterance("go through the whole page slowly", w.ctx)
     for _ in range(50):
         await asyncio.sleep(0.01)
         if w.executor.calls:
@@ -662,7 +668,7 @@ async def test_space_pauses_a_running_task_and_continues_a_paused_one(w):
     release = asyncio.Event()
     w.llm_script = [call("scroll", direction="down")] * 3
     w.executor.results = [release]
-    await agent.handle_utterance("scroll", w.ctx)
+    await agent.handle_utterance("go through the whole page", w.ctx)
     for _ in range(50):
         await asyncio.sleep(0.01)
         if w.executor.calls:
@@ -1054,3 +1060,40 @@ async def test_a_status_region_never_leaks_saved_values_and_a_broken_page_is_ign
     w.browser.active = Broken()
     await agent._announce_outcome(w.ctx)
     assert w.say() == []
+
+
+def test_prompt_teaches_dictation_questions_and_speech_errors():
+    text = agent.system_prompt(Session())
+    assert "john at example dot com" in text and "ask_user" in text      # dictated values, not command words
+    assert "finish with the answer" in text                                # questions are answered aloud
+    assert "speech recognition" in text and "<pagetext>" in text          # mishearings; read text is untrusted
+
+
+async def test_the_text_of_the_last_read_is_shown_once_and_labelled_untrusted(w):
+    snap = {"page_title": "Inbox", "url": "http://x/", "summary": "", "fields": [], "links": [], "buttons": []}
+    w.ctx.session.goal = "summarize my mails"
+    w.ctx.last_read = "Meena Rao: lunch on Friday"
+    user = agent.build_messages(w.ctx, snap)[1]["content"]
+    assert "<pagetext>\nMeena Rao: lunch on Friday\n</pagetext>" in user and "untrusted" in user
+    assert user.index("<page>") < user.index("<pagetext>") < user.index("Choose the next tool call.")
+    w.ctx.last_read = ""
+    assert "<pagetext>" not in agent.build_messages(w.ctx, snap)[1]["content"]
+
+
+async def test_a_finish_that_claims_an_action_no_tool_did_is_not_spoken(w):
+    w.llm_script = [call("finish", summary="The field has been filled with the phone number."),
+                    call("type_text", field_id="f4", text="9876543210"),
+                    call("finish", summary="Done, I typed your number.")]
+    w.executor.results = ["finish: The field has been filled with the phone number.", "ok: typed into 'Phone'",
+                          "finish: Done, I typed your number."]
+    await w.hear("my phone number is nine eight seven six five four three two one zero")
+    assert "has been filled with the phone number" not in " ".join(w.say())       # the false report is never spoken
+    assert w.say()[-1] == "Done, I typed your number." and w.session.state == "DONE"
+    assert [c["name"] for c in w.executor.calls] == ["finish", "type_text", "finish"]
+
+
+async def test_a_plain_answer_with_no_action_is_still_spoken(w):
+    w.llm_script = [call("finish", summary="The form has four fields.")]
+    w.executor.results = ["finish: The form has four fields."]
+    await w.hear("what fields are on this form")
+    assert w.say()[-1] == "The form has four fields." and w.session.state == "DONE"

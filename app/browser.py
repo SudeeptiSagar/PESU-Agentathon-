@@ -37,6 +37,8 @@ MODES = ("chromium", "chrome", "attach")
 CONSOLE_URL = f"http://{config.HOST}:{config.PORT}/console"
 CONSOLE_BOUNDS = {"left": 0, "top": 0, "width": 520, "height": 900}
 AGENT_BOUNDS = {"left": 530, "top": 0, "width": 1100, "height": 900}
+FULL_BOUNDS = {"windowState": "maximized"}   # overlay mode: the Console is a floating orb, the agent window takes the screen
+CONSOLE_MODES = ("browser", "overlay")
 # Focus the Console's text box. The Console (M2) keeps focus itself; this is a backstop.
 FOCUS_INPUT_JS = """() => {
   window.focus();
@@ -145,10 +147,15 @@ class BrowserController:
     def __init__(self, on_new_tab: Callable[[str, str], Any] | None = None,
                  headless: bool = False, console_url: str = CONSOLE_URL, mode: str | None = None,
                  debug_port: int | None = None, profile_dir: Path | str | None = None,
-                 chrome_path: str | None = None) -> None:
+                 chrome_path: str | None = None, console_mode: str | None = None) -> None:
         self.on_new_tab = on_new_tab   # called as on_new_tab(title, url); may be sync or async
         self.headless = headless       # chromium mode only
         self.console_url = console_url
+        # "browser": the Voice Console is a window of this browser. "overlay": it is the native floating orb
+        # (app/overlay.py), so no Console window is opened here and refocusing targets the overlay by its title.
+        self.console_mode = console_mode or config.CONSOLE_MODE
+        if self.console_mode not in CONSOLE_MODES:
+            raise ValueError(f"CONSOLE_MODE must be one of {', '.join(CONSOLE_MODES)}, got {self.console_mode!r}")
         self.mode = mode or config.BROWSER_MODE
         if self.mode not in MODES:
             raise ValueError(f"BROWSER_MODE must be one of {', '.join(MODES)}, got {self.mode!r}")
@@ -182,20 +189,23 @@ class BrowserController:
 
     async def _start_chromium(self) -> None:
         self._browser = await self._pw.chromium.launch(headless=self.headless)
+        overlay = self.console_mode == "overlay"
         # Separate contexts open as separate windows; no_viewport lets each page fill its window.
-        self._console_ctx = await self._browser.new_context(no_viewport=True)
+        if not overlay:
+            self._console_ctx = await self._browser.new_context(no_viewport=True)
         self._agent_ctx = await self._browser.new_context(no_viewport=True)
 
-        self.console_page = await self._console_ctx.new_page()
-        await self._place_window(self._console_ctx, self.console_page, CONSOLE_BOUNDS)
-        try:
-            await self.console_page.goto(self.console_url)
-        except Exception as e:  # backend not up yet: keep the window, the agent can still browse
-            log.warning("Console not reachable at %s: %s", self.console_url, e)
+        if not overlay:
+            self.console_page = await self._console_ctx.new_page()
+            await self._place_window(self._console_ctx, self.console_page, CONSOLE_BOUNDS)
+            try:
+                await self.console_page.goto(self.console_url)
+            except Exception as e:  # backend not up yet: keep the window, the agent can still browse
+                log.warning("Console not reachable at %s: %s", self.console_url, e)
 
         self._agent_ctx.on("page", self._on_page)
         self.active = await self._agent_ctx.new_page()   # _on_page registers it
-        await self._place_window(self._agent_ctx, self.active, AGENT_BOUNDS)
+        await self._place_window(self._agent_ctx, self.active, FULL_BOUNDS if overlay else AGENT_BOUNDS)
 
     async def _start_cdp(self) -> None:
         """chrome / attach: attach to Chrome over CDP, starting it first in chrome mode."""
@@ -213,15 +223,17 @@ class BrowserController:
             await asyncio.to_thread(wait_for_cdp, self.cdp_url)
         self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
         ctx = self._browser.contexts[0]   # the profile's default, signed-in context
-        self._agent_ctx = self._console_ctx = ctx
+        self._agent_ctx = ctx
         startup_pages = list(ctx.pages)
 
-        self.console_page = await self._new_window()
-        await self._place_window(ctx, self.console_page, CONSOLE_BOUNDS)
-        try:
-            await self.console_page.goto(self.console_url)
-        except Exception as e:  # backend not up yet: keep the window, the agent can still browse
-            log.warning("Console not reachable at %s: %s", self.console_url, e)
+        if self.console_mode == "browser":
+            self._console_ctx = ctx
+            self.console_page = await self._new_window()
+            await self._place_window(ctx, self.console_page, CONSOLE_BOUNDS)
+            try:
+                await self.console_page.goto(self.console_url)
+            except Exception as e:  # backend not up yet: keep the window, the agent can still browse
+                log.warning("Console not reachable at %s: %s", self.console_url, e)
 
         await self._open_agent_window()
         ctx.on("page", self._on_cdp_page)
@@ -232,7 +244,7 @@ class BrowserController:
     async def _open_agent_window(self) -> None:
         page = await self._new_window()
         self._agent_window = await self._window_id(page)
-        await self._place_window(self._agent_ctx, page, AGENT_BOUNDS)
+        await self._place_window(self._agent_ctx, page, FULL_BOUNDS if self.console_mode == "overlay" else AGENT_BOUNDS)
         self._on_page(page)
 
     async def _new_window(self) -> Page:
@@ -292,6 +304,15 @@ class BrowserController:
 
     async def refocus_console(self) -> None:
         """Bring the Console window to the front and focus its text box (PRD 8.3)."""
+        if self.console_mode == "overlay":
+            # The Console is the native overlay (its own window, found by title), not a page of this browser.
+            if sys.platform == "win32" and not self.headless:
+                for _ in range(3):
+                    if _win_force_foreground(config.OVERLAY_TITLE):
+                        return
+                    await asyncio.sleep(0.1)
+                log.debug("The overlay window %r was not found, or Windows refused to bring it forward", config.OVERLAY_TITLE)
+            return
         if self.console_page is None or self.console_page.is_closed():
             return
         await self.console_page.bring_to_front()

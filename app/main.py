@@ -28,6 +28,19 @@ log = logging.getLogger("app.main")
 
 CLIENT_DIR = config.ROOT / "client"
 DIST_DIR = CLIENT_DIR / "dist"
+# `npm run build` writes a self-contained page (script and styles inline) to client/console.html, and the repo commits it,
+# so a demo laptop without Node still gets the real Console. client/dist/console.html is Vite's asset-based copy.
+CONSOLE_FILE = CLIENT_DIR / "console.html"
+
+
+def console_page() -> Path | None:
+    """The built Console page to serve, or None (then the placeholder is shown)."""
+    for candidate in (CONSOLE_FILE, DIST_DIR / "console.html"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 MAX_UTTERANCE_CHARS = 2000
 DEV_PORT = 5173          # the Vite dev server for the Console
 # Browsers may not guess these on every OS (Windows can map .js to text/plain, which module scripts refuse).
@@ -76,7 +89,7 @@ class Hub:
     def begin_unlock(self) -> None:
         """Once per app start, when the first Console connects: unlock the saved profile with the user's PIN, or
         set one up if there is none. The questions are M2's (onboarding.py, UI-07); they use ctx.listen()."""
-        if self.unlock_started or self.ctx.session.profile:
+        if self.unlock_started or self.ctx.session.profile or not config.AUTO_UNLOCK:
             return
         self.unlock_started = True
         self.ctx.setup_task = asyncio.create_task(self._unlock())
@@ -140,13 +153,13 @@ app = FastAPI(title="Voice Browser Agent", lifespan=lifespan)
 async def health() -> dict:
     return {"status": "ok", "model": config.LLM_MODEL, "tts": config.TTS_BACKEND, "stt": config.STT_BACKEND,
             "gate": config.GATE_BACKEND, "browser": config.BROWSER_MODE,
-            "console_built": (DIST_DIR / "console.html").is_file()}
+            "console_built": console_page() is not None}
 
 
 @app.get("/console", response_model=None)
 async def console() -> FileResponse | HTMLResponse:
-    built = DIST_DIR / "console.html"
-    if built.is_file():
+    built = console_page()
+    if built is not None:
         return FileResponse(built, media_type="text/html")
     return HTMLResponse(_PLACEHOLDER)
 
@@ -227,9 +240,9 @@ async def ws_console(ws: WebSocket) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    built = (DIST_DIR / "console.html").is_file()
+    page = console_page()
     log.info("Console: http://%s:%s/console (%s)", config.HOST, config.PORT,
-             "built" if built else "not built, showing the placeholder: cd client; npm ci; npm run build")
+             f"serving {page.relative_to(config.ROOT)}" if page else "no built page, showing the placeholder: cd client; npm ci; npm run build")
     uvicorn.run(app, host=config.HOST, port=config.PORT)
 
 

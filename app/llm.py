@@ -35,6 +35,7 @@ async def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
         "stream": False,
         "think": False,  # no reasoning trace: faster steps, nothing extra to speak or parse
         "options": {"temperature": 0, "num_ctx": config.NUM_CTX},
+        "keep_alive": "60m",  # Ollama unloads after 5 idle minutes by default; a reload costs seconds per command
     }
     if tools:
         payload["tools"] = tools
@@ -48,6 +49,10 @@ async def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
         data = resp.json()
     log.info("llm prompt_tokens=%s completion_tokens=%s",
              data.get("prompt_eval_count"), data.get("eval_count"))
+    if (data.get("prompt_eval_count") or 0) >= config.NUM_CTX * 0.95:
+        # Ollama drops the oldest tokens (the system prompt) past num_ctx, and the model loses its rules.
+        log.warning("llm prompt filled the context window (%s of %s tokens); raise NUM_CTX",
+                    data.get("prompt_eval_count"), config.NUM_CTX)
     return data
 
 

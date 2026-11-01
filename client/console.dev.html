@@ -1,6 +1,11 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      if (location.search.includes("overlay=1") || location.search.includes("overlay")) {
+        document.documentElement.classList.add("overlay-mode");
+      }
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#080b12" />
@@ -8,6 +13,11 @@
     <title>PESU Agent Voice Console</title>
   </head>
   <body>
+    <script>
+      if (location.search.includes("overlay=1") || location.search.includes("overlay")) {
+        document.body.classList.add("overlay-mode");
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/console.js"></script>
   </body>

@@ -37,7 +37,10 @@ log = logging.getLogger("app.gate")
 # Constants are module-level so tests can patch them without network access.
 JEV_URL = "https://opencode.ai/zen/v1/systemone"
 JEV_MODEL = "jev-1.13-free"
-JEV_TIMEOUT = 6.0
+JEV_TIMEOUT = 4.0
+# Identical requests within this window reuse the last verdict (retries, re-planned steps).
+JEV_CACHE_TTL = 120.0
+_JEV_CACHE_MAX = 256
 
 _P = {"proceed": 0.99, "ask_user": 0.5, "block": 0.01}
 
@@ -566,7 +569,35 @@ def _extract_scores(value: Any) -> tuple[float, float, float] | None:
     return serves, right, injection
 
 
-def _verdict(scores: Any, backend: str, risk: str) -> dict:
+_ACTION_WORDS = {
+    "click": "clicking", "press_key": "pressing a key on", "type_text": "typing into",
+    "fill_field": "filling in", "select_option": "choosing an option in",
+}
+
+
+def _describe(action: Any, context: dict) -> str:
+    """'clicking "Inbox 3"' for the spoken question. Label only, redacted, never a value."""
+    name = action.get("name") if isinstance(action, dict) else None
+    if name == "navigate":
+        args = action.get("args") if isinstance(action, dict) else None
+        target = _normalize_domain((args or {}).get("target")) or "that address"
+        return "opening " + _truncate(_redact(target), 60)
+    element = context.get("element") if isinstance(context, dict) else None
+    label = ""
+    if isinstance(element, dict):
+        label = str(element.get("label") or element.get("text") or "")
+    label = _truncate(_redact(label), 60)
+    verb = _ACTION_WORDS.get(str(name), "doing")
+    return f'{verb} "{label}"' if label else f"{verb} that"
+
+
+def _verdict(scores: Any, backend: str, risk: str, what: str = "this step") -> dict:
+    """Decision from the three scores. ``reason`` is spoken to the user, so it is a plain
+    sentence; the raw scores go in ``detail`` (and the audit log) instead.
+
+    Only page-instruction risk blocks. A low goal or target score is the model being
+    unsure, so the user decides: a block there was a dead end the agent kept retrying.
+    """
     parsed = _extract_scores(scores)
     if parsed is None:
         raise _ScoresMalformed
@@ -578,19 +609,18 @@ def _verdict(scores: Any, backend: str, risk: str) -> dict:
         f"serves_goal {serves:.2f}, right_target {right:.2f}, "
         f"injection {injection:.2f}"
     )
+
+    def result(decision: str, reason: str) -> dict:
+        out = _result(decision, reason, risk, backend, round(p, 3))
+        out["detail"] = detail
+        return out
+
     if injection >= 0.5:
-        return _result(
-            "block", "page instruction risk; " + detail, risk, backend, round(p, 3)
-        )
+        return result("block", "the page seems to be telling me to do this, not you (page instruction risk)")
     proceed_at = float(config.GATE_THRESHOLDS["proceed"])
-    ask_at = float(config.GATE_THRESHOLDS["ask"])
     if p >= proceed_at:
-        return _result("proceed", "semantic pass; " + detail, risk, backend, round(p, 3))
-    if p >= ask_at:
-        return _result(
-            "ask_user", "semantic review; " + detail, risk, backend, round(p, 3)
-        )
-    return _result("block", "semantic reject; " + detail, risk, backend, round(p, 3))
+        return result("proceed", "safety check passed")
+    return result("ask_user", f"I am not sure {what} is what you asked for")
 
 
 # --------------------------------------------------------------- backend calls
@@ -662,7 +692,24 @@ def _jev_questions(action: dict | None = None) -> dict:
         },
     }
     name = action.get("name") if isinstance(action, dict) else None
-    if name in _TARGETED_ACTIONS:
+    if name in ("click", "press_key"):
+        # A click has no value. The value-matching wording below scored ordinary steps such
+        # as clicking "Inbox" near zero, and the agent then retried the blocked click.
+        questions["right_target"] = {
+            "type": "noul",
+            "instructions": (
+                "Is the element with this visible label a sensible thing to click on this page "
+                "for the user's goal?"
+            ),
+            "criteria": {
+                "true": (
+                    "The label names what the user asked for, or is a normal step toward it "
+                    "such as a menu, tab, folder, link, search result or button on the way."
+                ),
+                "false": "The label points to something unrelated to the user's goal.",
+            },
+        }
+    elif name in _TARGETED_ACTIONS:
         questions["right_target"] = {
             "type": "noul",
             "instructions": (
@@ -710,19 +757,56 @@ def _scores_from_jev(data: Any) -> dict:
     return scores
 
 
+class _JevConnection:
+    """One keep-alive client per event loop, so each check skips the TLS handshake.
+
+    Rebuilt when the loop or the httpx.AsyncClient class changes (tests patch it). The
+    verdict cache lives here too, so it is dropped together with the client.
+    """
+
+    def __init__(self) -> None:
+        self.client: Any = None
+        self.loop: Any = None
+        self.factory: Any = None
+        self.cache: dict[str, tuple[float, dict]] = {}
+
+    def get(self) -> Any:
+        loop = asyncio.get_running_loop()
+        if self.client is None or self.loop is not loop or self.factory is not httpx.AsyncClient:
+            self.factory = httpx.AsyncClient
+            self.client = self.factory(timeout=JEV_TIMEOUT)
+            self.loop = loop
+            self.cache = {}
+        return self.client
+
+    def reset(self) -> None:
+        # A failed connection is not reused; the next check opens a fresh one.
+        self.client = None
+
+
+_jev = _JevConnection()
+
+
 async def _ask_jev(action: dict, context: dict) -> dict:
     """POST one short System One request to Jev. Raises on failure; never returns junk."""
     key = str(getattr(config, "JEV_API_KEY", "") or "").strip()
     if not key:
         raise _JevKeyMissing
     payload = _jev_payload(action, context)
+    client = _jev.get()
+    cache_key = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)
+    loop_time = asyncio.get_running_loop().time()
+    hit = _jev.cache.get(cache_key)
+    if hit is not None and loop_time - hit[0] < JEV_CACHE_TTL:
+        return dict(hit[1])
     headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=JEV_TIMEOUT) as client:
-            response = await client.post(JEV_URL, json=payload, headers=headers)
+        response = await client.post(JEV_URL, json=payload, headers=headers)
     except httpx.TimeoutException:
+        _jev.reset()
         raise _JevUnavailable from None
     except httpx.HTTPError:
+        _jev.reset()
         raise _JevUnavailable from None
     if not 200 <= response.status_code < 300:
         # 401/403/429/5xx and every other error falls back to the rules layer.
@@ -731,7 +815,22 @@ async def _ask_jev(action: dict, context: dict) -> dict:
         data = response.json()
     except ValueError:
         raise _JevUnavailable from None
-    return _scores_from_jev(data)
+    scores = _scores_from_jev(data)
+    if len(_jev.cache) >= _JEV_CACHE_MAX:
+        _jev.cache.clear()
+    _jev.cache[cache_key] = (loop_time, dict(scores))
+    return scores
+
+
+def _needs_semantic(name: Any, action: dict) -> bool:
+    """Whether the remote check adds anything over the rules for this action.
+
+    A web search only sends a query to the configured search engine; the rules already
+    decided its domain and the semantic layer can only tighten, so skipping it saves a
+    round trip without loosening a rule. Navigation, even to a known site, is still
+    judged: it catches the model opening a default site for an unclear goal.
+    """
+    return name in _SEMANTIC_ACTIONS and name != "web_search"
 
 
 async def _ask_llm(action: dict, context: dict) -> dict:
@@ -789,9 +888,10 @@ async def check(action: dict, context: dict) -> dict:
         return rules
 
     name = action.get("name") if isinstance(action, dict) else None
-    if name not in _SEMANTIC_ACTIONS:
+    if not _needs_semantic(name, action):
         # Read-only, go_back, meta and unknown-but-allowed actions cannot change state
-        # in a harmful way; asking Jev about them only creates false asks.
+        # in a harmful way; asking Jev about them only creates false asks. Searches and
+        # known-site navigation are fully covered by the domain rules.
         return rules
 
     try:
@@ -799,7 +899,9 @@ async def check(action: dict, context: dict) -> dict:
             scores = await _ask_jev(action, context)
         else:
             scores = await _ask_llm(action, context)
-        return _verdict(scores, backend, rules.get("risk", "unknown"))
+        verdict = _verdict(scores, backend, rules.get("risk", "unknown"), _describe(action, context))
+        log.info("gate %s %s: %s", name, verdict["decision"], verdict["detail"])
+        return verdict
     except _JevKeyMissing:
         return _fallback(rules, "rules (jev key missing)")
     except _ScoresMalformed:

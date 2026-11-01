@@ -16,12 +16,14 @@ def isolated_backend(request, monkeypatch, tmp_path_factory):
 
     monkeypatch.setattr(main.app.state, "hub", None, raising=False)
     if "e2e" not in request.node.path.parts:
-        async def silent(ctx):
-            return None
-
         monkeypatch.setattr(main.app.state, "browser_factory", None, raising=False)
         # An empty, private location: profile_exists() is honestly False and the real ~/.voiceagent is never touched.
         monkeypatch.setattr(config, "PROFILE_PATH", tmp_path_factory.mktemp("no_profile") / "profile.json")
-        monkeypatch.setattr(main.onboarding, "run_unlock", silent)
-        monkeypatch.setattr(main.onboarding, "run_onboarding", silent)
+        # No PIN prompt or onboarding when a test opens the Console socket. Tests of that flow switch it back on.
+        monkeypatch.setattr(config, "AUTO_UNLOCK", False)
+        # The offline suite never calls the hosted Jev or the local model as a gate, whatever .env says (a live
+        # key in .env must not be spent by tests). tests/test_gate_live.py and tests that want a backend set it.
+        monkeypatch.setattr(config, "GATE_BACKEND", "rules")
+        monkeypatch.setattr(config, "MAX_FAILURES", 2)
+        monkeypatch.setattr(config, "JEV_API_KEY", "")
     yield

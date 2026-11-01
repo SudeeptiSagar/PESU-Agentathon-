@@ -11,7 +11,7 @@ This guide covers the Handy setup, React Bits Voice Console, and voice helpers. 
 - Python packages for the backend and tests are listed in `requirements.txt`: FastAPI, `uvicorn[standard]`, Playwright, OpenAI, cryptography, python-dotenv, httpx, pytest, and pytest-asyncio. Install them with `python -m pip install -r requirements.txt`.
 - The Console's locked npm packages are installed from `client/package-lock.json` with `npm ci`: React 19.3.1, React DOM 19.3.1, and OGL 1.0.11 at runtime; Vite 7.3.7 and `@vitejs/plugin-react` 5.2.0 for development and builds.
 - Piper is optional and is not in `requirements.txt`. Install it in the active virtual environment with `python -m pip install piper-tts sounddevice`.
-- Handy is a separate application. On Windows, `winget install cjpais.Handy` is documented by the Handy project; releases are also available at [Handy releases](https://github.com/cjpais/Handy/releases).
+- Handy is a separate application. On Windows, use `winget install --id cjpais.Handy --scope user --skip-dependencies --accept-package-agreements --accept-source-agreements`. The standard command failed on a VulkanRT dependency-manifest resolution error; `--skip-dependencies` skips that failing dependency step. Verify with `winget list --id cjpais.Handy`, then launch Handy from Start and confirm the window and tray icon appear. Complete its first-run prompts, allow microphone permission, download/select a model, and try a harmless transcription. See [SETUP.md](../SETUP.md) for the per-machine checklist and the [official Handy README](https://github.com/cjpais/Handy/blob/main/README.md) for current guidance.
 
 ## B. Run the Voice Console
 
@@ -31,13 +31,10 @@ The browser speech backend is the default. For Piper, set `$env:VITE_TTS_BACKEND
 Build the production frontend from `client`:
 
 ```powershell
-cd client
-npm ci
 npm run build
-cd ..
 ```
 
-This compiles the React application into `client/dist/` (served at `/console` and `/assets`) and writes `client/console.html` and `client/dist/console.html`. For production integration, start FastAPI after the build (`python -m app.main`) and open **http://127.0.0.1:8080/console**.
+This writes a self-contained production page to `client/console.html` for FastAPI's `/console` route, plus Vite preview assets under `client/dist/`. The Vite preview at **http://127.0.0.1:4173/console.dev.html** does not proxy WebSockets; use the development server for a proxied preview. For production integration, start FastAPI after the build and open **http://127.0.0.1:8080/console**. Stop Vite preview with `Ctrl+C`.
 
 ## C. Run the Python voice module and tests
 
@@ -119,11 +116,11 @@ The WebSocket route currently calls the CORE-10/11 stub in `app/agent.py`, which
 
 ## E. Handy input workflow
 
-1. Install and start Handy. Allow microphone access in **Windows Settings → Privacy & security → Microphone** for microphone access, app access, and desktop-app access. Grant any additional OS input/accessibility permission if Handy requests it.
-2. In Handy Settings, select/download a speech model and configure its hold-to-talk shortcut. Handy's model is for transcription; it is separate from the optional Piper output voice.
-3. Start the backend and Vite development server as above. Open the Console URL and leave the Console input focused. The input is visually hidden and re-focuses itself after blur.
-4. Hold Handy's shortcut while speaking, then release it. Handy transcribes locally and pastes the text into the focused Console input.
-5. The Console sends the pasted text after 900 ms without more input, or immediately on Enter, as an `utterance` WebSocket event. The current backend stub echoes the text. No wake word is used.
+1. Install and start Handy. Allow microphone access in **Windows Settings → Privacy & security → Microphone** for microphone access, app access, and desktop-app access. Grant additional permissions if Windows or Handy requests them.
+2. Complete the first-run setup, download/select a transcription model, and configure Handy's hold-to-talk shortcut in Settings. Its transcription model is separate from the optional Piper output voice.
+3. Start the backend and Vite development server as above, or use the production FastAPI Console. Focus the Console input before dictating. The empty paste target stays visually quiet; dictated text appears in a large, high-contrast field before the 900 ms debounce.
+4. Hold Handy's shortcut while speaking, then release it. Handy transcribes locally and pastes into the Console input. Keyboard users can Tab from the input to the orb and Activity Panel; `Alt+T` shows and focuses the task input. The Console does not steal focus after a blur.
+5. The Console sends pasted text after 900 ms without more input, or immediately on Enter, as an `utterance` WebSocket event. The current backend stub echoes the text. No wake word is used.
 
 Handy installation and physical microphone/headset behavior have not been tested on this host. If the Console loses focus, Handy can paste into the wrong application; always verify the target input before dictating sensitive text.
 
@@ -135,6 +132,7 @@ Handy installation and physical microphone/headset behavior have not been tested
 - React Bits TargetCursor and CursorGrid are included as source components. Live Playwright click highlighting is not connected because no browser target/coordinate event is available to the Console.
 - The Console is a web page. An always-on-top desktop window and OS-level refocus helper are not implemented.
 - CORE-14's OS startup-shortcut script is not present in the current default branch. Start the backend and Vite manually for this build.
+- NVDA is not installed on this host; screen-reader verification remains a manual check.
 - The Vite dev server must be run from `client`; the backend must be running at port 8080 for its WebSocket proxy to connect.
 
 ## G. Troubleshooting
@@ -149,3 +147,57 @@ Handy installation and physical microphone/headset behavior have not been tested
 - **Piper reports a missing model:** confirm `PIPER_VOICE` is the full path to the `.onnx` file and its downloaded `.onnx.json` sidecar is next to it.
 - **Piper imports fail or audio is silent:** install `piper-tts` and `sounddevice` in the same virtual environment used by `python -m app.main`; verify the Windows default output device and the model path. Physical audio has not been tested here.
 - **Handy paste goes elsewhere or is stale:** refocus the Console input before holding Handy's shortcut. See `SETUP.md` for Handy's paste troubleshooting and reliable-paste settings.
+
+## H. UI-03 NVDA verification (Windows)
+
+This host does not have NVDA installed, so these steps are instructions rather than a claimed test result. Install the current stable NVDA release from [NV Access](https://www.nvaccess.org/download/) or run `winget install --id NVAccess.NVDA`. Start NVDA from the Windows Start menu. The default NVDA modifier is `Insert`; NVDA can also be configured to use `Caps Lock`. The [NVDA User Guide](https://api.nvaccess.org/documentation/userGuide.html) documents these commands.
+
+1. Build with browser speech enabled and start FastAPI using sections B and D. Open **http://127.0.0.1:8080/console** in Chrome or Edge.
+2. On startup Handy has a focused paste target. Press `Tab` to move to the orb and verify its visible focus ring. Open Activity with `Alt+I`, then press `Tab` to reach the Activity Panel. The Console must not pull focus back to the input.
+3. Press `Alt+T` from any Console control. The task input should become visible and focused. Type a harmless request such as `hello accessibility test`; inspect the text before the 900 ms debounce sends it. The visible input uses large, high-contrast text.
+4. With BrowserTTS enabled, the response is spoken by browser speech and the agent-message log is not a live region. With BrowserTTS disabled, the agent-message log announces the response once. In either mode the status region announces state changes, not a duplicate copy of the response.
+5. Press `Escape` while the input, orb, or Activity Panel has focus. NVDA should announce **Stopped.** and the Console should return to its ready state.
+6. In Windows **Settings → Accessibility → Contrast themes**, apply a high-contrast theme and confirm the input, activity text, table borders, and keyboard focus indicators remain visible. Restore the previous theme after checking.
+
+Record the NVDA version, browser, whether each announcement was heard once, any focus loss, and any contrast issue. A clean NVDA run is required before marking UI-03's screen-reader acceptance complete.
+
+## I. First Handy voice check (safe stub)
+
+This verifies Handy paste, Console transport, and speech output with the current backend stub. It does not exercise autonomous browser actions or spoken command routing.
+
+1. Build the production Console with `$env:VITE_TTS_BACKEND = "browser"` and `npm run build` from `client`.
+2. In a second PowerShell at the repository root, run `$env:TTS_BACKEND = "browser"` and `python -m app.main`. If port 8080 is occupied, set `$env:PORT = "8081"` before starting and use port 8081 below.
+3. Open the matching FastAPI URL, `http://127.0.0.1:8080/console` (or `:8081/console`). Wait for the orb to indicate a connected Console.
+4. Start Handy, select its configured hold-to-talk key, and speak `hello from Handy`. Release the key and keep the Console window in front.
+5. Within about 900 ms, the Console should send the pasted transcript, show the answering state, and speak `You said: hello from Handy` through browser speech.
+6. Press `Escape` on the keyboard. The stub should emit and speak `Stopped.`. Do not use personal data for this check.
+
+For the first complete autonomous run, M1 must finish CORE-10/11 command routing and stop/interruption control. The current agent stub only echoes text. The production browser click overlay also needs a browser-side target interface from M3; no target event has been added to Section 12.
+
+## J. Full mock-site rehearsal (after CORE-10/11 integration)
+
+Use only the mock portal and its planted fake data. Do not enter real profile or banking information.
+
+1. Build the production Console, start FastAPI, and start Handy as described above. Start the mock site in another PowerShell window from the repository root with `python -m http.server 8000 --directory .\mock_site`.
+2. Start the integrated M1/M3 browser flow when CORE-10/11 is available. Open the agent browser on `http://127.0.0.1:8000/portal/apply.html` and keep the Console window available.
+3. With Handy, speak a simple reversible instruction such as `read the heading on the demo portal`. Verify the Console receives the utterance, shows the agent state and step, and speaks the response.
+4. During a longer response, speak a second harmless instruction. Verify the Console stops its current browser speech immediately and the backend begins the newer instruction.
+5. Ask the agent to perform one reversible mock-site action and verify the page changed as requested.
+6. Say `stop` during the task and verify the agent halts; also press `Escape` and verify the explicit Console stop key.
+7. Record the Handy transcript, Console events, browser result, interruption result, and stop result. Repeat only with fake data.
+
+As of this run, steps 1 and the Console/WebSocket echo path work. The current `app/agent.py` is still the CORE-10/11 echo stub, so steps 2–6 are a **not-yet-runnable procedure**, not a passing E2E result. M1 owns the missing command/task control path; M3 owns browser-side execution and focus. The separate M3 focus check is described in section K below.
+
+## K. Observed milestone checks (2026-10-31)
+
+- `npm run build` with `VITE_TTS_BACKEND=browser`: passed with Vite 7.3.7; 95 modules transformed. The FastAPI page is self-contained.
+- `python -m pytest -q`: **394 passed, 1 skipped**, with one existing AnyIO/Pytest deprecation warning (68.18 s).
+- `python -m compileall app tests`: passed.
+- On `ui/UI-06-voice`, `python -m pytest -q tests/test_voice.py`: **22 passed**, with the same warning.
+- Chromium/Playwright against the production FastAPI page: **passed**. Verified WebSocket connection, 900 ms debounce, Enter submission, `speak` event playback callback, speech cancellation when new input arrives, activity panel, and reconnect after a backend restart.
+- A mock Section 12 WebSocket: **passed**. Verified `state`, `speak`, `step`, `field_table`, `pending`, `alert`, `input_mode`, plus Console `utterance` and Escape `key`; the sensitive input switched to password mode.
+- `python -m pytest -q tests/test_console_accessibility.py`: **12 passed** against both BrowserTTS and Piper production builds served by FastAPI. Covered tab order, focus retention, transcript visibility before debounce, one response announcement per mode, semantic field-table headers, Escape, contrast, and forced colors.
+- Focus diagnosis: the script defaults to `config.PORT` (8080). On this host, 8080 belongs to `AgentService.exe` (PID 6156), not this FastAPI app. Starting this app on 8081 served the production Console at `/console` with HTTP 200 and title **PESU Agent Voice Console** (not the placeholder). The focus-test flow was run against that actual URL in a headless, DOM-only harness: all five mock-site actions returned page focus **5/5**. The harness deliberately did not call M3's Windows foreground helper, so it provides no OS-focus result.
+- The unmodified Windows helper was not run: M3's `_win_force_foreground()` attaches input queues with `AttachThreadInput` and calls `SetForegroundWindow`, explicitly lifting the foreground restriction. Per the UI-04 QA rule, that security bypass must not be used. OS foreground focus therefore remains **unmeasured**, and the 10-utterance Handy test remains **not run**.
+- Proposed M3 change: remove the `AttachThreadInput`/`SetForegroundWindow` bypass, use only Windows-permitted foreground activation, and have the test report OS focus as unavailable or failed when Windows does not grant it. DOM focus must not count as an OS-focus pass. No M3 source was changed.
+- NVDA and Handy were not available, and Piper/sounddevice/model playback was not available. Screen-reader, Handy/microphone, Piper audio, and OS-level window-focus checks remain manual. These results do not claim a hardware E2E pass.

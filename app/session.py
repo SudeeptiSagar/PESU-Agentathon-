@@ -172,6 +172,9 @@ class Context:
     notes: list = field(default_factory=list)   # user answers and interjections for the LLM
     approved_action: dict | None = None         # a gated action the user said yes to
     verify_rounds: int = 0                      # form checks that found problems for the current held action
+    last_read: str = ""                         # text of the last read_page, shown to the model on the next step only
+    understood: bool = False                    # the request was turned into a concrete instruction for this task
+    recap: str = ""                             # the previous request and answer, so "that one" / "it" can be resolved
     # Onboarding and PIN unlock ask the user something and wait for the answer (see listen):
     inbox: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
     listening: bool = False

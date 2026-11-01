@@ -1,19 +1,126 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import CrystalizedBall from "./src/components/CrystalizedBall.jsx";
 import "./console.css";
 
+// Polyfill Array.prototype.at for older Chromium / QtWebEngine compatibility
+if (!Array.prototype.at) {
+  Array.prototype.at = function (n) {
+    n = Math.trunc(n) || 0;
+    if (n < 0) n += this.length;
+    if (n < 0 || n >= this.length) return undefined;
+    return this[n];
+  };
+}
+
+// The orb is decoration. It draws with WebGL, which some laptops and embedded browsers do not have. If it cannot be
+// drawn, show a plain glowing circle instead: the input box, speech, keys and activity panel must never depend on it.
+// Software WebGL (SwiftShader, llvmpipe, "Basic Render Driver") runs 16,000 particles far too slowly: the page freezes and
+// the input box with it. Treat it like no WebGL.
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|software|basic render|microsoft basic/i;
+
+function webglAvailable() {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (!gl) return false;
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+    return !SOFTWARE_RENDERER.test(renderer);
+  } catch {
+    return false;
+  }
+}
+
+// /console?orb=off always shows the plain circle; ?orb=on forces the WebGL orb; the default decides by itself.
+function orbWanted() {
+  const choice = new URLSearchParams(window.location.search).get("orb");
+  if (choice === "off") return false;
+  if (choice === "on") return true;
+  return webglAvailable();
+}
+
+class OrbBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn("Orb disabled, using the plain circle:", error?.message || error);
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+function PlainOrb({ color }) {
+  return <span className="plain-orb" style={{ "--plain-orb": color }} aria-hidden="true" />;
+}
+
+const isOverlay =
+  typeof window !== "undefined" &&
+  (new URLSearchParams(window.location.search).get("overlay") === "1" ||
+    window.location.search.includes("overlay"));
+
+
 const REDACTED_INPUT = "Sensitive entry sent";
 const BROWSER_TTS_ENABLED =
   String(import.meta.env.VITE_TTS_BACKEND || "browser").toLowerCase() === "browser";
+
+// Speech. A normal browser speaks with speechSynthesis. The desktop overlay's embedded browser has none, so the Console
+// passes each line to the overlay through console.info; app/overlay.py reads those two messages and speaks with the
+// Windows voices. Either way every line is queued (never cut off by the next) and cancel stops everything at once.
+const NATIVE_SPEECH =
+  typeof window !== "undefined" &&
+  "speechSynthesis" in window &&
+  typeof SpeechSynthesisUtterance === "function";
+
+// The default voice is often the oldest one installed. Prefer neural voices (Edge "Natural", Chrome "Google").
+const VOICE_PREFERENCE = [/natural/i, /online/i, /google us english/i, /google uk english female/i, /google/i];
+
+function pickVoice() {
+  let voices = [];
+  try {
+    voices = (window.speechSynthesis.getVoices?.() || []).filter((v) => /^en/i.test(v.lang || ""));
+  } catch {
+    return null; // never let voice choice stop a line from being spoken
+  }
+  for (const pattern of VOICE_PREFERENCE) {
+    const voice = voices.find((v) => pattern.test(v.name));
+    if (voice) return voice;
+  }
+  return null;
+}
+
+function speakText(text) {
+  if (NATIVE_SPEECH) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = pickVoice();
+    if (voice) utterance.voice = voice;
+    window.speechSynthesis.speak(utterance);
+  } else console.info("PESU_SPEAK:" + JSON.stringify(String(text)));
+}
+
+function cancelSpeech() {
+  if (NATIVE_SPEECH) window.speechSynthesis.cancel();
+  else console.info("PESU_CANCEL_SPEECH");
+}
 const COLORS = {
-  ready: { preset: "frost", color: "#38bdf8" },
-  listening: { preset: "ember", color: "#f97316" },
-  thinking: { preset: "aurora", color: "#22c55e" },
-  answering: { preset: "ember", color: "#ff9c76" },
-  awaiting: { preset: "solar", color: "#ffd36e" },
+  ready: { preset: "frost", color: "#38bdf8" },       // Blue while idle
+  listening: { preset: "ember", color: "#f97316" },   // Orange while listening
+  thinking: { preset: "aurora", color: "#22c55e" },   // Green while thinking
+  acting: { preset: "aurora", color: "#38bdf8" },
+  answering: { preset: "frost", color: "#38bdf8" },
+  awaiting: { preset: "solar", color: "#eab308" },
   paused: { preset: "frost", color: "#b8dfff" },
-  error: { preset: "ember", color: "#ff647c" },
+  stopped: { preset: "frost", color: "#94a3b8" },
+  error: { preset: "ember", color: "#ef4444" },
 };
 
 function statusFor(name) {
@@ -21,10 +128,11 @@ function statusFor(name) {
     case "LISTENING":
       return { phase: "listening", label: "Listening" };
     case "PLANNING":
-    case "ACTING":
     case "VERIFYING":
     case "COMMITTING":
       return { phase: "thinking", label: "Thinking" };
+    case "ACTING":
+      return { phase: "acting", label: "Acting in browser" };
     case "READBACK":
     case "DONE":
       return { phase: "answering", label: "Answering" };
@@ -37,6 +145,8 @@ function statusFor(name) {
       return { phase: "awaiting", label: "Needs your answer" };
     case "PAUSED":
       return { phase: "paused", label: "Paused" };
+    case "STOPPED":
+      return { phase: "stopped", label: "Stopped" };
     case "ERROR":
       return { phase: "error", label: "Needs attention" };
     default:
@@ -112,7 +222,12 @@ function useConsoleSocket(onEvent) {
 
 function Activity({ steps, transcript, fields, pending, alerts, connection }) {
   return (
-    <section className="activity-panel" aria-label="Assistant activity">
+    <section
+      id="activity-panel"
+      className="activity-panel"
+      aria-label="Assistant activity"
+      tabIndex={0}
+    >
       <div className="activity-heading">
         <span className={`connection-dot connection-dot--${connection}`} />
         <span>{connection === "connected" ? "Connected" : "Reconnecting"}</span>
@@ -138,15 +253,24 @@ function Activity({ steps, transcript, fields, pending, alerts, connection }) {
       {fields.length > 0 && (
         <section className="activity-block" aria-label="Masked page fields">
           <h2>Fields</h2>
-          <div className="field-table" role="table" aria-label="Masked fields">
-            {fields.slice(0, 8).map((field, index) => (
-              <div className="field-row" role="row" key={`${field.label}-${index}`}>
-                <span role="cell">{field.label || "Field"}</span>
-                <span role="cell">{field.value_masked || "Hidden"}</span>
-                <span role="cell">{field.status || ""}</span>
-              </div>
-            ))}
-          </div>
+          <table className="field-table" aria-label="Masked fields">
+            <thead>
+              <tr>
+                <th scope="col">Field</th>
+                <th scope="col">Masked value</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fields.slice(0, 8).map((field, index) => (
+                <tr key={`${field.label}-${index}`}>
+                  <th scope="row">{field.label || "Field"}</th>
+                  <td>{field.value_masked || "Hidden"}</td>
+                  <td>{field.status || "Unknown"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
 
@@ -167,7 +291,7 @@ function Activity({ steps, transcript, fields, pending, alerts, connection }) {
       {transcript.length > 0 && (
         <section className="activity-block" aria-label="Recent transcript">
           <h2>Transcript</h2>
-          <ol className="transcript-list" aria-live="polite" aria-relevant="additions text">
+          <ol className="transcript-list">
             {transcript.slice(-6).reverse().map((item, index) => (
               <li key={`${index}-${item.role}-${item.text}`}>
                 <span>{item.role === "assistant" ? "Agent" : "You"}</span>
@@ -183,16 +307,31 @@ function Activity({ steps, transcript, fields, pending, alerts, connection }) {
 
 function AssistantOrb() {
   const inputRef = useRef(null);
+  const messageSequenceRef = useRef(0);
   const [status, setStatus] = useState({ phase: "ready", label: "Ready" });
   const [draft, setDraft] = useState("");
   const [inputMode, setInputMode] = useState("voice");
+  const [inputExpanded, setInputExpanded] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [steps, setSteps] = useState([]);
   const [transcript, setTranscript] = useState([]);
+  const [agentMessages, setAgentMessages] = useState([]);
   const [fields, setFields] = useState([]);
   const [pending, setPending] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [announcement, setAnnouncement] = useState("Ready");
+  useEffect(() => {
+    if (isOverlay) {
+      document.documentElement.classList.add("overlay-mode");
+      document.body.classList.add("overlay-mode");
+    }
+  }, []);
+
+  const suppressInitialFocusReveal = useRef(true);
+  // True when this Console speaks the agent's lines itself (natively or through the overlay), so a screen reader
+  // must not read the same lines a second time.
+  const browserTtsAvailable = BROWSER_TTS_ENABLED;
 
   const handleEvent = useCallback((event) => {
     switch (event.type) {
@@ -201,7 +340,7 @@ function AssistantOrb() {
         setStatus(next);
         setAnnouncement(next.label);
         if (String(event.name).toUpperCase() === "IDLE" && BROWSER_TTS_ENABLED) {
-          window.speechSynthesis?.cancel();
+          cancelSpeech();
         }
         if (["IDLE", "DONE"].includes(String(event.name).toUpperCase()))
           setPending(null);
@@ -211,24 +350,20 @@ function AssistantOrb() {
       }
       case "speak":
         if (event.text) {
+          const messageId = messageSequenceRef.current++;
           setStatus({ phase: "answering", label: "Answering" });
-          if (
-            BROWSER_TTS_ENABLED &&
-            "speechSynthesis" in window &&
-            typeof SpeechSynthesisUtterance === "function"
-          ) {
-            window.speechSynthesis.speak(new SpeechSynthesisUtterance(event.text));
-            setAnnouncement("Answering");
-          } else {
-            setAnnouncement(event.text);
+          if (browserTtsAvailable) {
+            speakText(event.text);
           }
+          setAnnouncement("Answering");
+          setAgentMessages((current) => [...current, { id: messageId, text: event.text }].slice(-6));
           setTranscript((current) => [...current, { role: "assistant", text: event.text }].slice(-12));
         }
         break;
       case "step":
         setSteps((current) => [...current, event].slice(-24));
-        setStatus({ phase: "thinking", label: "Thinking" });
-        setAnnouncement([event.action, event.target, event.result].filter(Boolean).join(". ") || "Working");
+        setStatus({ phase: "acting", label: "Acting in browser" });
+        setAnnouncement("Working");
         break;
       case "field_table":
         setFields(Array.isArray(event.fields) ? event.fields : []);
@@ -243,7 +378,7 @@ function AssistantOrb() {
         if (event.message) {
           const alert = { level: event.level || "info", message: event.message };
           setAlerts((current) => [...current, alert].slice(-8));
-          setAnnouncement(event.message);
+          setAnnouncement(event.level === "error" ? "Error" : "Alert");
           if (event.level === "error") setStatus({ phase: "error", label: "Needs attention" });
           setActivityOpen(true);
         }
@@ -259,14 +394,15 @@ function AssistantOrb() {
       default:
         break;
     }
-  }, []);
+  }, [browserTtsAvailable]);
 
   const { connection, send } = useConsoleSocket(handleEvent);
+  const canDrawOrb = useMemo(orbWanted, []);
 
   const sendDraft = useCallback(() => {
     const text = draft.trim();
     if (!text) return;
-    if (BROWSER_TTS_ENABLED) window.speechSynthesis?.cancel();
+    if (BROWSER_TTS_ENABLED) cancelSpeech();
     if (!send({ type: "utterance", text })) {
       setAnnouncement("Reconnecting. Your request is still here.");
       return;
@@ -276,6 +412,8 @@ function AssistantOrb() {
     setAnnouncement(secret ? REDACTED_INPUT : "Request sent");
     setStatus({ phase: "thinking", label: "Thinking" });
     setDraft("");
+    setInputExpanded(false);
+    setInputFocused(false);
   }, [draft, inputMode, send]);
 
   useEffect(() => {
@@ -285,46 +423,70 @@ function AssistantOrb() {
   }, [draft, connection, inputMode, sendDraft]);
 
   const sendKey = useCallback((name) => {
-    if (name === "Escape") window.speechSynthesis?.cancel();
+    if (name === "Escape") cancelSpeech();
     if (!send({ type: "key", name })) {
       setAnnouncement("Console reconnecting. The command was not sent.");
       return;
     }
-    if (name === "Escape") setAnnouncement("Stop requested");
+    if (name === "Escape") {
+
+      setStatus({ phase: "stopped", label: "Stopped" });
+
+      setAnnouncement("Stop requested");
+
+    }
     if (name === "Space") setAnnouncement("Pause or continue requested");
   }, [send]);
 
   useEffect(() => {
-    inputRef.current?.focus({ preventScroll: true });
-  }, [inputMode]);
+    const keepFocus = () => {
+      inputRef.current?.focus({ preventScroll: true });
+    };
+    keepFocus();
+    suppressInitialFocusReveal.current = false;
 
-  useEffect(() => {
-    const handleFocus = () => inputRef.current?.focus({ preventScroll: true });
-    window.addEventListener("focus", handleFocus);
-    window.addEventListener("click", handleFocus);
+    window.addEventListener("focus", keepFocus);
+    window.addEventListener("click", keepFocus);
     return () => {
-      window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("click", handleFocus);
+      window.removeEventListener("focus", keepFocus);
+      window.removeEventListener("click", keepFocus);
     };
   }, []);
 
   const handleKeyDown = (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      sendKey("Escape");
-    } else if (event.code === "Space" && !draft.trim()) {
-      event.preventDefault();
-      sendKey("Space");
-    } else if (event.altKey && event.key.toLowerCase() === "i") {
-      event.preventDefault();
-      setActivityOpen((open) => !open);
-    } else if (event.key === "Enter") {
+    if (event.key === "Enter") {
       event.preventDefault();
       sendDraft();
     }
   };
 
-  const phase = draft.trim() ? "listening" : (connection === "connected" ? status.phase : "error");
+  const handleMainKeyDown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      sendKey("Escape");
+    } else if (event.altKey && event.key.toLowerCase() === "i") {
+      event.preventDefault();
+      setActivityOpen((open) => !open);
+    } else if (event.altKey && event.key.toLowerCase() === "t") {
+      event.preventDefault();
+      setInputExpanded(true);
+      inputRef.current?.focus({ preventScroll: true });
+    } else if (
+      event.code === "Space" &&
+      event.target === inputRef.current &&
+      !draft.trim()
+    ) {
+      event.preventDefault();
+      sendKey("Space");
+    }
+  };
+
+  const phase =
+    draft.trim()
+    ? "listening"
+    : connection === "connected"
+      ? status.phase
+      : "error";
   const orb = COLORS[phase] || COLORS.ready;
   const connectionLabel =
     connection === "connected"
@@ -334,48 +496,68 @@ function AssistantOrb() {
         : "reconnecting";
 
   return (
-    <main className={`orb-screen orb-screen--${phase}`}>
-      <button
-        type="button"
-        className="orb-button"
-        aria-label={`PESU assistant. ${status.label}. Console ${connectionLabel}. Click to ${activityOpen ? "hide" : "view"} activity.`}
-        aria-expanded={activityOpen}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => setActivityOpen((open) => !open)}
-      >
-        <span className="orb-aura" aria-hidden="true" />
-        <CrystalizedBall
-          className="assistant-ball"
-          preset={orb.preset}
-          color={orb.color}
-          size={0.78}
-          particleCount={16000}
-          speed={phase === "thinking" ? 1.15 : 0.72}
-          interactive={false}
-          intro={false}
-          paused={phase === "paused"}
-        />
-      </button>
-
+    <main className={`orb-screen orb-screen--${phase}${isOverlay ? " orb-screen--overlay" : ""}`}
+      onClick={() => inputRef.current?.focus({ preventScroll: true })} onKeyDown={handleMainKeyDown}>
       <input
         ref={inputRef}
-        className="capture-input"
+        className={`capture-input${draft || inputExpanded || inputFocused ? " capture-input--visible" : ""}`}
         type={inputMode === "typed_secret" ? "password" : "text"}
         value={draft}
         autoComplete="off"
         spellCheck={false}
         aria-label={inputMode === "typed_secret" ? "Sensitive entry" : "Task input"}
         aria-describedby="input-help"
+        onFocus={() => {
+          if (!suppressInitialFocusReveal.current) setInputFocused(true);
+        }}
+        onBlur={() => setInputFocused(false)}
         onChange={(event) => {
           setDraft(event.target.value);
         }}
         onKeyDown={handleKeyDown}
-        onBlur={() => window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0)}
       />
       <span id="input-help" className="visually-hidden">
         Handy pastes the request here. Enter sends it. Escape stops the agent. Alt plus I opens activity.
-        {inputMode === "typed_secret" ? " Typed characters are hidden." : ""}
+        Alt plus T shows the task input. {inputMode === "typed_secret" ? " Typed characters are hidden." : ""}
       </span>
+      <button
+        type="button"
+        className="orb-button"
+        aria-label={`PESU assistant. ${status.label}. Console ${connectionLabel}. Click to ${activityOpen ? "hide" : "view"} activity.`}
+        aria-expanded={activityOpen}
+        aria-controls="activity-panel"
+        onMouseDown={(event) => { if (!isOverlay) event.preventDefault(); }}
+        onClick={() => {
+          inputRef.current?.focus({ preventScroll: true });
+          if (!isOverlay) setActivityOpen((open) => !open);
+        }}
+      >
+        <span className="orb-aura" aria-hidden="true" />
+        {canDrawOrb ? (
+          <OrbBoundary fallback={<PlainOrb color={orb.color} />}>
+            <CrystalizedBall
+              className="assistant-ball"
+              preset={orb.preset}
+              color={orb.color}
+              size={isOverlay ? 0.72 : 0.78}
+              particleCount={16000}
+              speed={phase === "thinking" ? 1.15 : phase === "acting" ? 1.35 : 0.72}
+              interactive={false}
+              intro={false}
+              paused={phase === "paused"}
+            />
+          </OrbBoundary>
+        ) : (
+          <PlainOrb color={orb.color} />
+        )}
+      </button>
+
+      <div className="orb-subtitle" aria-hidden="true">
+        {draft
+          ? (inputMode === "typed_secret" ? "••••••••" : draft)
+          : (pending?.description || (agentMessages.length > 0 ? agentMessages[agentMessages.length - 1].text : status.label))
+        }
+      </div>
 
       {activityOpen && (
         <Activity
@@ -388,11 +570,21 @@ function AssistantOrb() {
         />
       )}
 
+      <ol
+        className="visually-hidden"
+        role="log"
+        aria-label="Agent messages"
+        aria-live={browserTtsAvailable ? "off" : "polite"}
+        aria-relevant="additions"
+        aria-atomic="false"
+      >
+        {agentMessages.map((message) => <li key={message.id}>{message.text}</li>)}
+      </ol>
       <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {announcement}
       </div>
-      <div className="visually-hidden" role="alert" aria-live="assertive">
-        {alerts.at(-1)?.message || ""}
+      <div className="visually-hidden" role="alert" aria-live="assertive" aria-atomic="true">
+        {(alerts.length ? alerts[alerts.length - 1]?.message : "") || ""}
       </div>
     </main>
   );
