@@ -81,9 +81,30 @@ const NATIVE_SPEECH =
   "speechSynthesis" in window &&
   typeof SpeechSynthesisUtterance === "function";
 
+// The default voice is often the oldest one installed. Prefer neural voices (Edge "Natural", Chrome "Google").
+const VOICE_PREFERENCE = [/natural/i, /online/i, /google us english/i, /google uk english female/i, /google/i];
+
+function pickVoice() {
+  let voices = [];
+  try {
+    voices = (window.speechSynthesis.getVoices?.() || []).filter((v) => /^en/i.test(v.lang || ""));
+  } catch {
+    return null; // never let voice choice stop a line from being spoken
+  }
+  for (const pattern of VOICE_PREFERENCE) {
+    const voice = voices.find((v) => pattern.test(v.name));
+    if (voice) return voice;
+  }
+  return null;
+}
+
 function speakText(text) {
-  if (NATIVE_SPEECH) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-  else console.info("PESU_SPEAK:" + JSON.stringify(String(text)));
+  if (NATIVE_SPEECH) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = pickVoice();
+    if (voice) utterance.voice = voice;
+    window.speechSynthesis.speak(utterance);
+  } else console.info("PESU_SPEAK:" + JSON.stringify(String(text)));
 }
 
 function cancelSpeech() {

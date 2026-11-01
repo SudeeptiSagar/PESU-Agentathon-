@@ -48,11 +48,13 @@ SCAN_JS = r"""
 
   // CAPTCHA: our mock check, reCAPTCHA / hCaptcha / Turnstile widgets and their iframes.
   for (const box of all('[data-humancheck=captcha],.fake-captcha,.g-recaptcha,.h-captcha,.cf-turnstile')) {
+    if (box.getAttribute('data-size') === 'invisible' || box.classList.contains('grecaptcha-badge')) continue;
     const check = box.querySelector('input[type=checkbox]');
     const token = box.querySelector('textarea[name$="-response"],input[name$="-response"]');
     put('captcha', check ? (check.checked ? 'done' : 'pending') : token ? (token.value ? 'done' : 'pending') : 'pending');
   }
-  const capFrames = all('iframe').filter(f => captchaFrames.some(s => (f.src || '').includes(s)));
+  const capFrames = all('iframe').filter(f => captchaFrames.some(s => (f.src || '').includes(s)) &&
+    !(f.src || '').includes('size=invisible') && f.getBoundingClientRect().width >= 60 && f.getBoundingClientRect().height >= 40);
   if (capFrames.length) {
     const token = document.querySelector('[name="g-recaptcha-response"],[name="h-captcha-response"],[name="cf-turnstile-response"]');
     put('captcha', token && token.value ? 'done' : 'pending');
@@ -90,7 +92,10 @@ async def challenge_present(page) -> dict | None:
             continue
         url = frame.url.lower()
         if frame is not page.main_frame and any(s in url for s in CAPTCHA_FRAMES):
-            found.setdefault("captcha", "pending")   # cross-origin widget; solved state is read from the parent
+            # News and shop sites load invisible reCAPTCHA v3 / hidden challenge frames on every page.
+            # Only a widget the user can actually see is a check to hand over (false-stall fix, issue #3).
+            if await _frame_shown(frame, url):
+                found.setdefault("captcha", "pending")   # cross-origin widget; solved state is read from the parent
             continue
         try:
             seen = await frame.evaluate(SCAN_JS, {"captchaFrames": list(CAPTCHA_FRAMES),
@@ -109,6 +114,20 @@ async def challenge_present(page) -> dict | None:
         if found.get(kind) == "pending":
             return {"kind": kind, "hint": HINTS[kind]}
     return None
+
+
+async def _frame_shown(frame, url: str) -> bool:
+    """True if a CAPTCHA iframe is on screen at a usable size (not invisible reCAPTCHA or a hidden bframe)."""
+    if "size=invisible" in url:
+        return False
+    try:
+        el = await frame.frame_element()
+        if not await el.is_visible():
+            return False
+        box = await el.bounding_box()
+        return bool(box and box["width"] >= 60 and box["height"] >= 40)
+    except Exception:
+        return False
 
 
 async def _captcha_token_set(page) -> bool:

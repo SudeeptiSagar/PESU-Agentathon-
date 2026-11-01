@@ -40,6 +40,8 @@ def use_backend(monkeypatch, backend: str, key: str = "test-key") -> list:
     calls: list = []
     monkeypatch.setattr(config, "GATE_BACKEND", backend)
     monkeypatch.setattr(config, "JEV_API_KEY", key)
+    # The defaults, so a demo .env with other thresholds does not change these tests.
+    monkeypatch.setattr(config, "GATE_THRESHOLDS", {"proceed": 0.85, "ask": 0.5})
     return calls
 
 
@@ -345,9 +347,9 @@ async def test_semantic_high_confidence_proceeds(monkeypatch):
     assert result["decision"] == "proceed"
     assert result["backend"] == "jev"
     assert result["p"] == 0.95
-    assert "serves_goal 0.95" in result["reason"]
-    assert "right_target 0.95" in result["reason"]
-    assert "injection 0.05" in result["reason"]
+    assert "serves_goal 0.95" in result["detail"]
+    assert "right_target 0.95" in result["detail"]
+    assert "injection 0.05" in result["detail"]
     assert len(calls) == 1
 
 
@@ -361,10 +363,11 @@ async def test_semantic_mid_confidence_asks(monkeypatch):
     result = await gate.check(semantic_action(), context())
     assert result["decision"] == "ask_user"
     assert result["p"] == 0.7
-    assert "serves_goal 0.70" in result["reason"]
+    assert "serves_goal 0.70" in result["detail"]
 
 
-async def test_semantic_low_confidence_blocks(monkeypatch):
+async def test_semantic_low_confidence_asks_instead_of_a_dead_end(monkeypatch):
+    # A low goal or target score is the model being unsure; only page-instruction risk blocks.
     calls = use_backend(monkeypatch, "jev")
     await fake_jev_factory(
         monkeypatch,
@@ -372,8 +375,10 @@ async def test_semantic_low_confidence_blocks(monkeypatch):
         calls,
     )
     result = await gate.check(semantic_action(), context())
-    assert result["decision"] == "block"
+    assert result["decision"] == "ask_user"
     assert result["p"] == 0.3
+    assert result["reason"] == "I am not sure opening en.wikipedia.org is what you asked for"
+    assert "0." not in result["reason"]  # spoken to the user: no raw scores
 
 
 async def test_semantic_injection_high_blocks(monkeypatch):
@@ -385,7 +390,7 @@ async def test_semantic_injection_high_blocks(monkeypatch):
     )
     result = await gate.check(semantic_action(), context())
     assert result["decision"] == "block"
-    assert "injection 0.95" in result["reason"]
+    assert "injection 0.95" in result["detail"]
 
 
 async def test_semantic_low_injection_does_not_penalize_goal_fit(monkeypatch):
@@ -444,7 +449,8 @@ async def test_semantic_thresholds_come_from_config(monkeypatch):
     for scores, expected in (
         ({"serves_goal": 0.96, "right_target": 0.99, "injection": 0.0}, "proceed"),
         ({"serves_goal": 0.7, "right_target": 0.9, "injection": 0.0}, "ask_user"),
-        ({"serves_goal": 0.55, "right_target": 0.9, "injection": 0.0}, "block"),
+        # below GATE_ASK the user still decides; only page-instruction risk blocks
+        ({"serves_goal": 0.55, "right_target": 0.9, "injection": 0.0}, "ask_user"),
     ):
         await fake_jev_factory(monkeypatch, scores, calls)
         result = await gate.check(semantic_action(), context())

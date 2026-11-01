@@ -54,7 +54,9 @@ TOOL_SCHEMAS: list[dict] = [
     _tool("navigate", "Open a known site by name (alias) or a URL. For anything else use web_search.", target=_S),
     _tool("web_search", "Search the web for a query.", query=_S),
     _tool("go_back", "Go back to the previous page."),
-    _tool("scroll", "Scroll the page.", direction={"type": "string", "enum": ["up", "down"]}),
+    _tool("scroll", "Scroll the page one screen up or down, or jump to the top or bottom. The result says how far "
+          "down the page you are and what is now in view.",
+          direction={"type": "string", "enum": ["up", "down", "top", "bottom"]}),
     _tool("read_page", "Read the current page.",
           mode={"type": "string", "enum": ["summary", "main_text", "fields"]}),
     _tool("click", "Click a link or button by its element id.", element_id=_S),
@@ -201,6 +203,20 @@ def _result(url: str, domain: str, site: dict | None, kind: str) -> dict:
             "trusted": is_trusted_domain(domain), "kind": kind}
 
 
+COMMON_TLDS = frozenset({"com", "org", "net", "in", "gov", "edu", "io", "co", "ai", "info", "uk", "us", "app", "dev"})
+
+
+def spoken_domain(text: str) -> str:
+    """"example dot com" -> "example.com", "bbc dot co dot uk" -> "bbc.co.uk". Only when the whole phrase is words
+    joined by "dot" and it ends in a common top-level domain, so "polka dot dress" is left alone."""
+    words = [w for w in re.sub(r"[^a-z0-9 ]", " ", str(text).lower()).split() if w not in FILLER_WORDS]
+    if len(words) >= 3 and "dot" in words and words[-1] in COMMON_TLDS and "dot" not in (words[0], words[-1]):
+        parts = " ".join(words).split(" dot ")
+        if all(re.fullmatch(r"[a-z0-9-]+", p) for p in parts):
+            return ".".join(parts)
+    return str(text)
+
+
 def resolve_target(target: str) -> dict:
     """Turn what the user or LLM called a destination into {"url","domain","site_id","trusted","kind"}.
 
@@ -211,7 +227,7 @@ def resolve_target(target: str) -> dict:
     URLs with a username in them (https://good.example@evil.example), non-web schemes and invalid
     ports are not resolved.
     """
-    text = (target or "").strip()
+    text = spoken_domain((target or "").strip())
     if not text or len(text) > 2000:
         return dict(UNRESOLVED)
     explicit = re.match(r"^([a-z][a-z0-9+.-]*)://", text, re.I)
@@ -297,6 +313,66 @@ async def take_snapshot(page, session: Session) -> dict:
 DANGEROUS_SCHEMES = re.compile(r"^\s*(javascript|data|file|chrome|about|view-source|blob|ftp|vbscript):", re.I)
 PLACEHOLDER = re.compile(r"^\{([a-z_]+)\}$")
 ANY_PLACEHOLDER = re.compile(r"\{(" + "|".join(PLACEHOLDER_KEYS) + r")\}")
+ADDRESS_LABEL = re.compile(r"\b(to|cc|bcc|recipients?|e-?mail)\b", re.I)
+NUMBER_LABEL = re.compile(r"\b(phone|mobile|telephone|contact number|pin ?code|postal|zip|otp|amount|age|quantity|number)\b", re.I)
+
+
+def is_address_field(el: dict) -> bool:
+    """True for a field that takes an email address (type email, or a To / Cc / Bcc / recipient / email label)."""
+    return el.get("type") == "email" or bool(ADDRESS_LABEL.search(str(el.get("label") or "")))
+
+
+# Scrolls, then reports where the page is and what is on screen (the first line is the status line).
+SCROLL_JS = r"""
+([where]) => {
+  const de = document.scrollingElement || document.documentElement;
+  const before = Math.round(de.scrollTop);
+  if (where === 'top') window.scrollTo(0, 0);
+  else if (where === 'bottom') window.scrollTo(0, de.scrollHeight);
+  else window.scrollBy(0, window.innerHeight * 0.8 * (where === 'up' ? -1 : 1));
+  const total = de.scrollHeight, view = window.innerHeight, y = Math.round(de.scrollTop);
+  const seen = [], push = t => { t = (t || '').replace(/\s+/g, ' ').trim(); if (t && !seen.includes(t)) seen.push(t); };
+  for (const el of document.querySelectorAll('h1,h2,h3,h4,p,li,td,th,label,button,a,summary,figcaption,blockquote')) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1 || r.bottom <= 0 || r.top >= view) continue;
+    if (el.closest('[hidden],[aria-hidden="true"]')) continue;
+    if (el.matches('a,button,li,td') && el.querySelector('p,h1,h2,h3,li')) continue;   // its children say it
+    push((/^h[1-4]$/i.test(el.tagName) ? 'Heading: ' : '') + (el.innerText || el.getAttribute('aria-label') || ''));
+  }
+  return {moved: y !== before, y, total, view, seen: seen.join('. ').slice(0, 600)};
+}
+"""
+
+
+async def scroll_view(page, where: str) -> str:
+    """Scroll "up", "down", "top" or "bottom". First line: what happened and how far down the page is.
+    Next line: the text now in view (untrusted page text, like read_page)."""
+    info = await page.evaluate(SCROLL_JS, [where])
+    reach = min(100, round(100 * (info["y"] + info["view"]) / max(info["total"], 1)))
+    at_top, at_bottom = info["y"] <= 2, info["y"] + info["view"] >= info["total"] - 2
+    if info["total"] <= info["view"] + 2:
+        line = "ok: the whole page fits on the screen, there is nothing to scroll"
+    elif not info["moved"]:
+        line = f"ok: already at the {'bottom' if where in ('down', 'bottom') else 'top'} of the page"
+    elif where == "top" or (where == "up" and at_top):
+        line = "ok: now at the top of the page"
+    elif where == "bottom" or (where == "down" and at_bottom):
+        line = "ok: now at the bottom of the page"
+    else:
+        line = f"ok: scrolled {where}, now {reach} percent of the way down the page"
+    return line + ("\nIn view: " + info["seen"] if info["seen"] else "")
+
+
+def spoken_address(text: str) -> str:
+    """"john at example dot com" -> "john@example.com". Text that is not spoken like an address is returned
+    trimmed; the caller checks for the "@"."""
+    s = re.sub(r"\s+at\s+the\s+rate(\s+of)?\s+", "@", str(text).strip().lower())
+    if "@" not in s:
+        s = re.sub(r"\s+at\s+", "@", s, count=1)
+    s = re.sub(r"\s+dot\s+", ".", s)
+    s = re.sub(r"\s+underscore\s+", "_", s)
+    s = re.sub(r"\s+(dash|hyphen)\s+", "-", s)
+    return re.sub(r"\s+", "", s) if "@" in s else s
 HUMAN_ONLY_FIELD = re.compile(r"\b(otp|one.?time|verification code|security code|cvv|cvc|card number|"
                               r"upi pin|mpin|password|passcode)\b", re.I)
 # What a profile value means, so the verifier can compare it type-aware (PRD Section 11).
@@ -499,11 +575,9 @@ class ToolExecutor:
 
     async def _scroll(self, args, session, browser) -> str:
         direction = args.get("direction")
-        if direction not in ("up", "down"):
-            raise ToolError("direction must be up or down")
-        sign = -1 if direction == "up" else 1
-        await self._page(browser).evaluate("s => window.scrollBy(0, window.innerHeight * 0.8 * s)", sign)
-        return f"ok: scrolled {direction}"
+        if direction not in ("up", "down", "top", "bottom"):
+            raise ToolError("direction must be up, down, top or bottom")
+        return await scroll_view(self._page(browser), direction)
 
     async def _read_page(self, args, session, browser) -> str:
         mode = args.get("mode")
@@ -547,7 +621,27 @@ class ToolExecutor:
                 session.pending_action["total_text"] = total        # read aloud with the question
             return (f"held: '{label}' ({kind}) was NOT pressed. It needs the user's spoken confirmation. "
                     "Tell the user and wait.")
-        await perception.locate(page, session, element_id).click(timeout=ACTION_TIMEOUT_MS)
+        search_fields = [i for i, e in session.elements.items()
+                         if i.startswith("f") and re.search(r"\bsearch\b", str(e.get("label") or ""), re.I)]
+        if search_fields and (element_id in search_fields
+                              or re.fullmatch(r"(search|search button|submit search|go)", label.strip().lower())):
+            # Models press the search button (or click the box) again and again without typing anything.
+            raise ToolError(f"to search, call type_text with field_id={search_fields[0]} and the words to find. "
+                            "Enter is pressed for you, so no click is needed")
+        locator = perception.locate(page, session, element_id)
+        try:
+            await locator.click(timeout=ACTION_TIMEOUT_MS)
+        except Exception as e:
+            # Busy pages (Google, Gmail) cover links with sticky bars, banners or animations, so Playwright's
+            # click waits for a free spot until it times out and the task stalls. Click the element itself
+            # instead. Irreversible controls were held above, so this never presses one.
+            if "Timeout" not in type(e).__name__:
+                raise
+            log.info("click %s timed out; clicking the element directly", element_id)
+            try:
+                await locator.evaluate("el => { el.scrollIntoView({block: 'center'}); el.click(); }", timeout=4000)
+            except Exception:
+                await locator.click(force=True, timeout=4000)
         await self._settle(browser)
         before = _domain_of(page.url)
         note = await self._after_navigation(session, browser)
@@ -596,6 +690,16 @@ class ToolExecutor:
             return "needs_human: this field takes a password or code that only the user may enter"
         if ANY_PLACEHOLDER.search(text):
             raise ToolError("profile values go in with fill_field, not type_text")
+        if NUMBER_LABEL.search(str(el.get("label") or "")) and not is_address_field(el):
+            from app import voice                               # "nine eight seven" -> "987" for number fields
+            digits = voice.words_to_digits(text)
+            if re.fullmatch(r"[\d\s+()-]+", digits) and re.search(r"\d", digits):
+                text = re.sub(r"\s+", "", digits) if len(re.sub(r"\D", "", digits)) >= 4 else digits.strip()
+        if is_address_field(el):
+            text = spoken_address(text)
+            if not re.fullmatch(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+", text):
+                raise ToolError("that is not a full email address (it needs a name before the @). "
+                                "Ask the user for the whole address with ask_user")
         page = self._page(browser)
         compact = re.sub(r"[\s-]", "", text)
         if any(len(str(session.profile.get(k) or "")) >= 4
@@ -606,6 +710,16 @@ class ToolExecutor:
                 return f"needs_approval: {domain}"
         await perception.locate(page, session, field_id).fill(text, timeout=ACTION_TIMEOUT_MS)
         await self._record_expected(session, page, field_id, el, text, "task", "text")
+        if re.search(r"\bsearch\b", str(el.get("label") or ""), re.I) or el.get("type") == "search":
+            # A search box: submit it with Enter now. Search buttons on busy sites are often covered by the
+            # suggestion list, and clicking them times out.
+            await perception.locate(page, session, field_id).press("Enter", timeout=ACTION_TIMEOUT_MS)
+            await self._settle(browser)
+            try:   # single-page sites (YouTube) show results without a page load: give them a moment to render
+                await self._page(browser).wait_for_load_state("networkidle", timeout=2500)
+            except Exception:
+                pass
+            return f"ok: searched for '{_clean(text)[:60]}', the results are open"
         return f"ok: typed into '{_clean(el['label'])}'"
 
     def _resolve_profile_ref(self, ref: str, session: Session) -> tuple[str, str]:

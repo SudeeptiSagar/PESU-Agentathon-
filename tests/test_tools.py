@@ -460,12 +460,30 @@ async def test_tab_tools(setup):
         assert (await ex.run(act("switch_tab", **bad), session, browser)).startswith("error:")
 
 
+def _scroll_eval(page, info):
+    async def evaluate(js, arg=None):
+        page.calls.append(("evaluate", arg))
+        return info
+    return evaluate
+
+
 async def test_scroll_and_go_back(setup):
     ex, session, browser, page = setup(PORTAL_URL)
-    assert (await ex.run(act("scroll", direction="down"), session, browser)) == "ok: scrolled down"
-    assert page.calls[-1] == ("evaluate", 1)
-    await ex.run(act("scroll", direction="up"), session, browser)
-    assert page.calls[-1] == ("evaluate", -1)
+    info = {"moved": True, "y": 500, "total": 2000, "view": 800, "seen": "Heading: History. Paragraph 13"}
+    page.evaluate = _scroll_eval(page, info)
+    out = await ex.run(act("scroll", direction="down"), session, browser)
+    assert out.splitlines()[0] == "ok: scrolled down, now 65 percent of the way down the page"
+    assert out.splitlines()[1] == "In view: Heading: History. Paragraph 13"
+    assert page.calls[-1] == ("evaluate", ["down"])
+    info.update(moved=False, y=1200)                      # already at the end: say so, so the model stops
+    out = await ex.run(act("scroll", direction="down"), session, browser)
+    assert out.splitlines()[0] == "ok: already at the bottom of the page"
+    info.update(moved=True, y=0)
+    assert (await ex.run(act("scroll", direction="top"), session, browser)).startswith("ok: now at the top")
+    info.update(y=1200)
+    assert (await ex.run(act("scroll", direction="bottom"), session, browser)).startswith("ok: now at the bottom")
+    info.update(total=700, view=800, y=0, moved=False, seen="")
+    assert "fits on the screen" in await ex.run(act("scroll", direction="down"), session, browser)
     assert (await ex.run(act("scroll", direction="left"), session, browser)).startswith("error:")
     assert (await ex.run(act("go_back"), session, browser)) == "ok: went back"
 
@@ -847,3 +865,48 @@ async def test_real_portal_gender_male_selects_the_option_Male(base, real):
     category = field_id(snap, "Category")
     assert (await ex.run(act("select_option", field_id=category, option="{category}"), session, browser)).startswith("ok:")
     assert await page.eval_on_selector("#category", "e => e.selectedOptions[0].text") == "General"
+
+
+# ---- spoken email addresses (dictated recipients)
+@pytest.mark.parametrize("spoken, written", [
+    ("john at example dot com", "john@example.com"),
+    ("John at the rate example dot co dot in", "john@example.co.in"),
+    ("ravi underscore kumar at example dot com", "ravi_kumar@example.com"),
+    ("a dash b at x dot org", "a-b@x.org"),
+    ("john@example.com", "john@example.com"),
+    ("xyz.com", "xyz.com"),                      # no name before an @: the caller refuses it
+])
+def test_spoken_address_turns_speech_into_an_address(spoken, written):
+    assert tools.spoken_address(spoken) == written
+
+
+def test_is_address_field_matches_to_cc_bcc_recipient_and_email_type():
+    for label in ("To", "To recipients", "Cc", "Bcc", "Recipient", "Email address"):
+        assert tools.is_address_field({"label": label, "type": "text"})
+    assert tools.is_address_field({"label": "Contact", "type": "email"})
+    for label in ("Subject", "Message body", "Total", "Full name"):
+        assert not tools.is_address_field({"label": label, "type": "text"})
+
+
+async def test_spoken_digits_become_digits_in_number_fields_only(setup):
+    ex, session, browser, page = setup(PORTAL_URL)
+    record_snapshot(session, {"fields": [
+        {"id": "f1", "label": "Mobile number", "type": "text", "sensitive_hint": False},
+        {"id": "f2", "label": "Message", "type": "text", "sensitive_hint": False}]})
+    session.locators = {"f1": '[data-agent-id="f1"]', "f2": '[data-agent-id="f2"]'}
+    assert (await ex.run(act("type_text", field_id="f1", text="nine eight seven six five four three two one zero"),
+                         session, browser)).startswith("ok:")
+    assert (await ex.run(act("type_text", field_id="f2", text="call me on nine eight"), session, browser)).startswith("ok:")
+    fills = [c[2] for c in page.calls if c[0] == "fill"]
+    assert fills == ["9876543210", "call me on nine eight"]       # the message keeps the user's words
+
+
+@pytest.mark.parametrize("spoken, written", [
+    ("example dot com", "example.com"), ("bbc dot co dot uk", "bbc.co.uk"), ("Wikipedia Dot Org", "wikipedia.org"),
+    ("polka dot dress", "polka dot dress"), ("dot com", "dot com"), ("wikipedia", "wikipedia")])
+def test_spoken_domain_only_changes_a_domain_said_aloud(spoken, written):
+    assert tools.spoken_domain(spoken) == written
+
+
+def test_a_spoken_domain_resolves_to_a_url():
+    assert tools.resolve_target("open example dot com")["url"] == "https://example.com"

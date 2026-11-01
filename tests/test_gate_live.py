@@ -34,5 +34,5 @@ async def test_live_jev_navigate_uses_system_one(monkeypatch):
     result = await gate.check(action, context)
     assert result["backend"] == "jev", result
     assert result["decision"] in {"proceed", "ask_user", "block"}, result
-    assert "serves_goal" in result["reason"] and "injection" in result["reason"]
+    assert "serves_goal" in result["detail"] and "injection" in result["detail"]
     assert 0.0 <= result["p"] <= 1.0

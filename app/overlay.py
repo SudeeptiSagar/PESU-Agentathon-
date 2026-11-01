@@ -180,6 +180,153 @@ class WindowsSpeech:
                 proc.kill()
 
 
+# Natural voice: Microsoft neural voices through edge-tts (needs internet), played with Windows MCI. OVERLAY_VOICE=windows
+# keeps the built-in voice. Any voice from `python -m edge_tts --list-voices` works for TTS_VOICE.
+NEURAL_VOICE = os.getenv("TTS_VOICE", "").strip() or "en-US-AvaMultilingualNeural"
+NEURAL_RATE = os.getenv("TTS_RATE", "").strip() or "+0%"
+NEURAL_TIMEOUT = 6.0
+NEURAL_PARALLEL = 2           # more parallel requests get throttled, and throttled lines fell back mid-sentence
+NEURAL_COOLDOWN = 60.0        # after repeated failures, stay on the built-in voice this long instead of switching per line
+_MCI_ALIAS = "pesu_tts"
+
+
+class _CoolingDown(Exception):
+    """The neural voice failed recently; this line uses the built-in voice."""
+
+
+class NeuralSpeech:
+    """Speaks with a natural neural voice. Lines are synthesized ahead and played in order; repeated lines come from a
+    cache. A line that cannot be synthesized in time is spoken by the built-in voice in the same queue, so speech never
+    goes silent and two voices never overlap.
+    """
+
+    def __init__(self, fallback: WindowsSpeech | None = None) -> None:
+        import asyncio
+        import itertools
+        import queue
+        import tempfile
+
+        self._fallback = fallback or WindowsSpeech()
+        self._loop = asyncio.new_event_loop()
+        threading.Thread(target=self._loop.run_forever, daemon=True, name="tts-synth").start()
+        self._order: queue.Queue = queue.Queue()
+        self._generation = 0
+        self._cache: dict[str, str] = {}
+        self._names = itertools.count()
+        self._dir = tempfile.mkdtemp(prefix="pesu-tts-")
+        self._limit = asyncio.Semaphore(NEURAL_PARALLEL)
+        self._failures = 0
+        self._neural_after = 0.0          # monotonic time before which lines use the built-in voice
+        threading.Thread(target=self._play_loop, daemon=True, name="tts-play").start()
+
+    @property
+    def acks(self) -> list[str]:
+        return self._fallback.acks
+
+    def speak(self, text: object) -> None:
+        import asyncio
+
+        cleaned = clean_speech(text)
+        if cleaned:
+            future = asyncio.run_coroutine_threadsafe(self._synthesize(cleaned), self._loop)
+            self._order.put((self._generation, cleaned, future))
+
+    async def _synthesize(self, text: str) -> str:
+        import asyncio
+
+        import edge_tts
+
+        cached = self._cache.get(text)
+        if cached and os.path.exists(cached):
+            return cached
+        if time.monotonic() < self._neural_after:
+            raise _CoolingDown
+        async with self._limit:
+            path = os.path.join(self._dir, f"line{next(self._names)}.mp3")
+            await asyncio.wait_for(edge_tts.Communicate(text, NEURAL_VOICE, rate=NEURAL_RATE).save(path),
+                                   NEURAL_TIMEOUT)
+        self._cache[text] = path
+        return path
+
+    def _builtin_voice(self):
+        """SAPI in the player thread, so the built-in voice is queued with the neural lines. None without pywin32."""
+        try:
+            import pythoncom
+            import win32com.client
+
+            pythoncom.CoInitialize()
+            return win32com.client.Dispatch("SAPI.SpVoice")
+        except Exception as e:
+            log.warning("built-in voice is not available in the queue: %s", type(e).__name__)
+            return None
+
+    def _speak_builtin(self, sapi, text: str, generation: int) -> None:
+        if sapi is None:
+            self._fallback.speak(text)     # last resort; may overlap, but never silent
+            return
+        try:
+            sapi.Speak(text, 1)            # SVSFlagsAsync: return now, poll so cancel can cut it short
+            while generation == self._generation:
+                if sapi.WaitUntilDone(30):
+                    return
+            sapi.Speak("", 3)              # async + purge: stop the current line
+        except Exception as e:
+            log.warning("built-in voice failed: %s", type(e).__name__)
+
+    def _play_loop(self) -> None:
+        import ctypes
+
+        mci = ctypes.windll.winmm.mciSendStringW
+        status = ctypes.create_unicode_buffer(64)
+        sapi = self._builtin_voice()
+        while True:
+            item = self._order.get()
+            if item is None:
+                return
+            generation, text, future = item
+            if generation != self._generation:
+                continue                   # cancelled while waiting
+            try:
+                # Lines wait for earlier ones to synthesize (NEURAL_PARALLEL), so allow for the queue ahead of this one.
+                path = future.result(NEURAL_TIMEOUT * 4)
+                self._failures = 0
+            except Exception as e:
+                log.warning("neural voice unavailable for one line: %s", type(e).__name__)
+                path = None
+                if not isinstance(e, _CoolingDown):
+                    self._failures += 1
+                    if self._failures >= 2:
+                        self._neural_after = time.monotonic() + NEURAL_COOLDOWN
+                        self._failures = 0
+            if generation != self._generation:
+                continue
+            if path is None or mci(f'open "{path}" type mpegvideo alias {_MCI_ALIAS}', None, 0, None) != 0:
+                self._speak_builtin(sapi, text, generation)
+                continue
+            log.debug("neural line starts")
+            try:
+                mci(f"play {_MCI_ALIAS}", None, 0, None)
+                while generation == self._generation:
+                    mci(f"status {_MCI_ALIAS} mode", status, 64, None)
+                    if status.value != "playing":
+                        break
+                    time.sleep(0.03)
+            finally:
+                mci(f"stop {_MCI_ALIAS}", None, 0, None)
+                mci(f"close {_MCI_ALIAS}", None, 0, None)
+                log.debug("neural line ends")
+
+    def cancel(self) -> None:
+        self._generation += 1              # the player drops queued lines and stops the current one within 30 ms
+        self._fallback.cancel()
+
+    def close(self) -> None:
+        self.cancel()
+        self._order.put(None)
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._fallback.close()
+
+
 class NoSpeech:
     """Other platforms: the overlay is Windows-first; the browser Console speaks there."""
 
@@ -196,7 +343,16 @@ class NoSpeech:
 
 
 def make_speech():
-    return WindowsSpeech() if sys.platform == "win32" else NoSpeech()
+    if sys.platform != "win32":
+        return NoSpeech()
+    # Tests (PESU_SPEECH_NULL) and OVERLAY_VOICE=windows keep the built-in voice.
+    if os.getenv("PESU_SPEECH_NULL") != "1" and (os.getenv("OVERLAY_VOICE", "").strip().lower() or "neural") == "neural":
+        try:
+            import edge_tts  # noqa: F401
+            return NeuralSpeech()
+        except ImportError:
+            log.warning("edge-tts is not installed; using the built-in Windows voice")
+    return WindowsSpeech()
 
 
 def handle_console_message(message: str, speech) -> bool:
